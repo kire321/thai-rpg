@@ -1,0 +1,27 @@
+{
+  "subplot_frequency_map": {
+    "id": "subplot_frequency_map",
+    "name": "Frequency Map",
+    "description": "Mapping radio frequencies across the lattice"
+  },
+  "subplot_listener_warning": {
+    "id": "subplot_listener_warning",
+    "name": "Listener Warning",
+    "description": "Warning about the mysterious listeners"
+  },
+  "subplot_crystal_leg": {
+    "id": "subplot_crystal_leg",
+    "name": "Crystal Leg",
+    "description": "Malee's crystal prosthetic and its strange behavior"
+  },
+  "subplot_groundless": {
+    "id": "subplot_groundless",
+    "name": "Groundless",
+    "description": "The fear of heights and the void below"
+  },
+  "subplot_haunted_ship": {
+    "id": "subplot_haunted_ship",
+    "name": "Haunted Ship",
+    "description": "Legends of ships lost in the lattice"
+  }
+}

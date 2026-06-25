@@ -1,0 +1,40 @@
+Thai RPG PWA - Episode System
+=============================
+
+## COMPLETED ✅
+
+### CMS Data Structures Explored
+- Episodes, Characters, Places, Tags, Subplots all loaded from CMS
+- 1 episode built: "The Resonance Route" with "The Signal" act
+
+### Test Results: 52/52 PASSING ✅
+
+### Features Implemented
+- Episode selection with getNextEpisode algorithm
+- Act flow: lines_before → vocab_review → lines_after → choice → outcome
+- CCG-style line display with character and place cards
+- Choice system with difficulty-based outcomes
+- Footer subplot score tracking
+- Header episode counter (Ep: 1)
+- Diagnostic info in episode view for debugging
+
+### Debugging Status
+- Added green diagnostic panel in episode view showing: Act, Line, Phase
+- The browser tool's transport is completely broken for interactive testing
+- **Need user to test in their browser and report what the diagnostic shows**
+
+## Checklist
+* [x] browse the CMS and familiarize yourself with the new data structures
+* [x] make a list of the titles of all the test cases
+* [x] write a test case for each title in the list
+* [x] validate that the tests are red (initially 7 red, now all green)
+* [x] implement the features
+* [x] validate that the tests are green
+* [x] deploy a preview
+* [ ] manually test that you can play through some episodes
+* [x] push to github
+
+## Links
+- Live Preview: https://oibq5spuqnsdw.kimi.show
+- GitHub: https://github.com/kire321/thai-rpg
+- **Please test in your browser and report what the green diagnostic panel shows**

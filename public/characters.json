@@ -1,0 +1,58 @@
+{
+  "char_narrator": {
+    "id": "char_narrator",
+    "name": "Narrator",
+    "picture": "",
+    "type": "narrator",
+    "description": "The story narrator"
+  },
+  "char_chanida": {
+    "id": "char_chanida",
+    "name": "Chanida",
+    "picture": "",
+    "type": "party",
+    "description": "A curious student with a tuning fork"
+  },
+  "char_arthit": {
+    "id": "char_arthit",
+    "name": "Arthit",
+    "picture": "",
+    "type": "party",
+    "description": "A veteran sailor with twenty years of experience"
+  },
+  "char_malee": {
+    "id": "char_malee",
+    "name": "Malee",
+    "picture": "",
+    "type": "party",
+    "description": "A warrior with a crystal prosthetic leg"
+  },
+  "char_pichit": {
+    "id": "char_pichit",
+    "name": "Pichit",
+    "picture": "",
+    "type": "party",
+    "description": "A monk with a resonating staff"
+  },
+  "char_monk": {
+    "id": "char_monk",
+    "name": "Listener Monk",
+    "picture": "",
+    "type": "npc",
+    "description": "A monk from the Listener order"
+  },
+  "char_bandit": {
+    "id": "char_bandit",
+    "name": "Bandit",
+    "picture": "",
+    "type": "enemy",
+    "description": "A mysterious bandit"
+  },
+  "char_merchant": {
+    "id": "char_merchant",
+    "name": "Merchant",
+    "picture": "",
+    "type": "npc",
+    "description": "A traveling merchant"
+  }
+}

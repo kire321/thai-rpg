@@ -1,0 +1,26 @@
+Thai RPG PWA - Reset State Feature
+===================================
+
+## Checklist
+* [x] Write test cases for Reset State button
+* [ ] Validate tests are red
+* [ ] Implement the feature
+* [ ] Validate tests are green
+* [ ] Deploy preview and manually test
+* [ ] Push to github
+
+## Test Plan
+
+### Reset State Button
+- GivenSettingsDrawerIsOpen_WhenILookForReset_ThenButtonExists
+
+### Confirmation Dialog
+- GivenITapReset_WhenConfirmationShown_ThenDialogAppears
+- GivenConfirmationShown_WhenITapCancel_ThenDialogCloses
+- GivenConfirmationShown_WhenITapConfirm_ThenStateResets
+
+### State Actually Resets
+- GivenStateHasData_WhenIReset_ThenCardStatsAreEmpty
+- GivenStateHasData_WhenIReset_ThenCardsRemain
+- GivenStateHasData_WhenIReset_ThenAgainQueueIsEmpty
+- GivenStateHasData_WhenIReset_ThenCurrentViewIsWelcome

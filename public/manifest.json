@@ -1,0 +1,19 @@
+{
+  "name": "Thai RPG",
+  "short_name": "ThaiRPG",
+  "description": "Learn Thai language through an RPG adventure",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#1a1a2e",
+  "theme_color": "#1a1a2e",
+  "orientation": "portrait",
+  "scope": "/",
+  "icons": [
+    {
+      "src": "/icon-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

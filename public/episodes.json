@@ -1,0 +1,606 @@
+[
+  {
+    "id": "ep_001",
+    "title": "The Resonance Route",
+    "acts": [
+      {
+        "id": "act_1",
+        "title": "The Signal",
+        "lines_before": [
+          {
+            "character": "char_narrator",
+            "place": "place_resonance_ship",
+            "dialogue": "The Khrueang's Whisper sails through thick cloud, its crystalline sails humming with harmonic light. For three days they have followed Chanida's unauthorized frequency into uncharted airspace.",
+            "stage_directions": "Wind snaps the rigging. Through gaps in the cloud, the lattice glitters far below like a frozen sea."
+          },
+          {
+            "character": "char_chanida",
+            "place": "place_resonance_ship",
+            "dialogue": "Listen. The lattice is... different here. Not the usual harmonic response. Something else underneath.",
+            "stage_directions": "She holds her tuning fork near the deck's resonance panels. It vibrates with an unfamiliar rhythm."
+          },
+          {
+            "character": "char_arthit",
+            "place": "place_resonance_ship",
+            "dialogue": "Different how? I've sailed these corridors for twenty years. The lattice doesn't do 'different.' It does pattern. Predictable pattern.",
+            "stage_directions": "Arthit's hand rests on the helm, tattooed forearms visible beneath his rolled sleeves."
+          },
+          {
+            "character": "char_malee",
+            "place": "place_resonance_ship",
+            "dialogue": "My leg agrees with the kid. The crystal prosthetic has been vibrating weird since dawn. Like it's picking up something the ship's sensors aren't.",
+            "stage_directions": "She taps her prosthetic leg. The crystal core flickers with faint blue light."
+          },
+          {
+            "character": "char_narrator",
+            "place": "place_phrao_monastery",
+            "dialogue": "They arrive at Phrao monastery-city at twilight. The Listener monks have agreed to examine Chanida's frequency data — but they have something to show the party first.",
+            "stage_directions": "Crystal bowls of varying sizes line the docking pavilion. Each hums at a different pitch, creating an otherworldly chord."
+          },
+          {
+            "character": "char_monk",
+            "place": "place_phrao_monastery",
+            "dialogue": "We have been recording the lattice for three hundred years. Never have we captured this. Please — listen.",
+            "stage_directions": "The monk places a recording crystal into a resonating bowl. The bowl amplifies the stored frequency."
+          },
+          {
+            "character": "char_pichit",
+            "place": "place_phrao_monastery",
+            "dialogue": "I heard everything. Every tone, every overtone. This is not random lattice reaction. It has... intention. Structure.",
+            "stage_directions": "Pichit's staff glows faintly, resonating with the recording. His eyes widen."
+          }
+        ],
+        "tag": "tag_091",
+        "lines_after": [
+          {
+            "character": "char_chanida",
+            "place": "place_phrao_monastery",
+            "dialogue": "You heard that, right? The pattern repeats. Three tones, pause, two tones, pause — that's not geological. That's communication.",
+            "stage_directions": "Chanida pulls out her crystal tablet, already analyzing the recorded pattern."
+          },
+          {
+            "character": "char_arthit",
+            "place": "place_phrao_monastery",
+            "dialogue": "I heard a strange noise, sure. But communication? The lattice is crystal, not a person. It doesn't have a mouth.",
+            "stage_directions": "Arthit folds his arms, skeptical but listening."
+          },
+          {
+            "character": "char_monk",
+            "place": "place_phrao_monastery",
+            "dialogue": "Do you know what this is? If the lattice is speaking, then everything we know about the Silencing is wrong. Everything.",
+            "stage_directions": "The monk's hands tremble as he handles the recording crystal."
+          },
+          {
+            "character": "char_pichit",
+            "place": "place_phrao_monastery",
+            "dialogue": "This is why I left the order. I heard these same patterns six months ago and they told me I was imagining things. You can try asking him — the abbot — but he will deny it. They all deny it.",
+            "stage_directions": "Pichit's voice is tight with old frustration. His staff dims, then pulses once."
+          }
+        ],
+        "decision": {
+          "line": {
+            "character": "char_monk",
+            "place": "place_phrao_monastery",
+            "dialogue": "The recording crystal shows coordinates. The signal's source is in the Silent Zone — where no ship has ever returned. The Tonal Orders must be told. But the abbot will suppress this, as he suppresses everything that challenges the old songs.",
+            "stage_directions": "The monk holds out the crystal, his face a mask of fear and hope."
+          },
+          "choices": [
+            {
+              "description": "Convince the monk to give you the crystal and keep the discovery secret from the Orders",
+              "difficulty": "medium",
+              "subplot": "subplot_frequency_map",
+              "pass_outcome": {
+                "line": {
+                  "character": "char_narrator",
+                  "place": "place_phrao_monastery",
+                  "dialogue": "The monk hands over the crystal with trembling fingers. 'Go,' he whispers. 'Find the source. But do not trust the Orders. They have known about anomalous frequencies for years and done nothing.'",
+                  "stage_directions": "The crystal is warm to the touch, humming with the lattice's strange song."
+                },
+                "subplot": "subplot_frequency_map",
+                "delta": 2
+              },
+              "fail_outcome": {
+                "line": {
+                  "character": "char_monk",
+                  "place": "place_phrao_monastery",
+                  "dialogue": "I cannot give this to outsiders. The Order must decide. I am sorry — I should not have shown you.",
+                  "stage_directions": "The monk withdraws the crystal, his moment of courage evaporating."
+                },
+                "subplot": "subplot_frequency_map",
+                "delta": -1
+              }
+            },
+            {
+              "description": "Ask Pichit to use his staff to copy the frequency for independent study",
+              "difficulty": "easy",
+              "subplot": "subplot_listener_warning",
+              "pass_outcome": {
+                "line": {
+                  "character": "char_pichit",
+                  "place": "place_phrao_monastery",
+                  "dialogue": "My staff can store the frequency. No one will know we copied it. If the lattice is truly communicating, we need to understand it before anyone else decides to bury the truth.",
+                  "stage_directions": "Pichit presses his staff against the recording crystal. The staff absorbs the tonal pattern with a soft chime."
+                },
+                "subplot": "subplot_listener_warning",
+                "delta": 2
+              },
+              "fail_outcome": {
+                "line": {
+                  "character": "char_monk",
+                  "place": "place_phrao_monastery",
+                  "dialogue": "No! The frequency must remain here! If you copy it and something goes wrong, the responsibility is mine!",
+                  "stage_directions": "The monk physically blocks Pichit, desperate to protect the recording."
+                },
+                "subplot": "subplot_listener_warning",
+                "delta": 0
+              }
+            },
+            {
+              "description": "Suggest they test the frequency on Malee's prosthetic to see if lattice crystal responds differently than ship crystal",
+              "difficulty": "easy",
+              "subplot": "subplot_crystal_leg",
+              "pass_outcome": {
+                "line": {
+                  "character": "char_malee",
+                  "place": "place_phrao_monastery",
+                  "dialogue": "My leg's crystal core is from the surface. If this frequency does anything different to surface crystal versus ship crystal, we'll know immediately. Let me try.",
+                  "stage_directions": "Malee exposes her prosthetic's crystal core. When Chanida plays the frequency nearby, it glows with an unfamiliar color — not blue, not violet, but something in between."
+                },
+                "subplot": "subplot_crystal_leg",
+                "delta": 2
+              },
+              "fail_outcome": {
+                "line": {
+                  "character": "char_malee",
+                  "place": "place_phrao_monastery",
+                  "dialogue": "Nothing. The prosthetic responds exactly like the ship's crystal. If there's a difference, it's too subtle for my gear to detect.",
+                  "stage_directions": "The crystal core flickers normally, showing no unusual reaction to the recorded frequency."
+                },
+                "subplot": "subplot_crystal_leg",
+                "delta": 0
+              }
+            }
+          ]
+        }
+      },
+      {
+        "id": "act_2",
+        "title": "The Breach",
+        "lines_before": [
+          {
+            "character": "char_narrator",
+            "place": "place_resonance_ship",
+            "dialogue": "The Khrueang's Whisper departs Phrao with the recording crystal and heavier questions. Chanida feeds the anomalous frequency into the navigation system, seeking a route toward its source.",
+            "stage_directions": "The singing engine's hum shifts. The lattice below parts in an unfamiliar pattern — hesitant, almost probing."
+          },
+          {
+            "character": "char_chanida",
+            "place": "place_resonance_ship",
+            "dialogue": "The route is forming. The lattice is... guiding us. Not just parting — pointing.",
+            "stage_directions": "Chanida's hands move over the navigation crystal, following tonal patterns no registered route has ever used."
+          },
+          {
+            "character": "char_malee",
+            "place": "place_resonance_ship",
+            "dialogue": "The engine's running hot. The crystal core is overworked trying to maintain this unregistered frequency. I'm so excited about the discovery, but if we blow the core, we're dead in the air.",
+            "stage_directions": "Malee monitors the engine gauges, her prosthetic leg braced against the vibrating deck."
+          },
+          {
+            "character": "char_arthit",
+            "place": "place_resonance_ship",
+            "dialogue": "Ship off the port bow. Modified hull, no registry. They're running a harmonic disrupter.",
+            "stage_directions": "A sleek predatory vessel emerges from the cloud layer, its crystalline fins jagged and weaponized."
+          },
+          {
+            "character": "char_bandit",
+            "place": "place_resonance_ship",
+            "dialogue": "Heave to! Surrender your frequency data!",
+            "stage_directions": "The pirate ship's disrupter emits a dissonant screech. The lattice below shudders."
+          }
+        ],
+        "tag": "tag_028",
+        "lines_after": [
+          {
+            "character": "char_chanida",
+            "place": "place_resonance_ship",
+            "dialogue": "The disruptor hit our starboard resonance panel! The lattice response is corrupted — our safe channel is collapsing!",
+            "stage_directions": "Smoke rises from the panel. The ship lurches as the lattice below begins to crystallize around the hull."
+          },
+          {
+            "character": "char_arthit",
+            "place": "place_resonance_ship",
+            "dialogue": "It's irrepairable in flight. The starboard panel is cracked — we can't maintain a safe frequency on that side. We need a plan, and we need it now.",
+            "stage_directions": "Arthit checks the damage report, his face grim. Tattooed routes seem to pulse on his forearms."
+          },
+          {
+            "character": "char_malee",
+            "place": "place_resonance_ship",
+            "dialogue": "Why aren't you careful?! I told you the core was overheating! If you'd listened to me instead of chasing your mystery signal —",
+            "stage_directions": "Malee slams her fist against a support beam, furious and scared."
+          },
+          {
+            "character": "char_pichit",
+            "place": "place_resonance_ship",
+            "dialogue": "Aren't you overthinking this? The damage is done. What matters is what we do next. Arthit — what's your plan?",
+            "stage_directions": "Pichit's calm voice cuts through the panic. His staff glows steadily, an anchor in the chaos."
+          }
+        ],
+        "decision": {
+          "line": {
+            "character": "char_narrator",
+            "place": "place_resonance_ship",
+            "dialogue": "The ship lists starboard. The pirate vessel circles like a shark, its disrupter charging for another blast. The lattice below reacts to the interference — crystal spires rising toward the damaged hull. Without the starboard panel, the singing engine can't maintain a safe frequency. Someone has to do something. Now.",
+            "stage_directions": "The deck tilts. Through the viewport, jagged crystal formations reach upward, drawn by the disrupter's disharmony."
+          },
+          "choices": [
+            {
+              "description": "Chanida reroutes all power to the port-side crystal, accepting that the starboard side will take damage",
+              "difficulty": "hard",
+              "subplot": "subplot_frequency_map",
+              "pass_outcome": {
+                "line": {
+                  "character": "char_chanida",
+                  "place": "place_resonance_ship",
+                  "dialogue": "I'm routing everything to port! Hold on — the lattice will respond to one strong frequency even if the other side is dead!",
+                  "stage_directions": "The port crystal flares blinding white. The lattice parts reluctantly, creating a narrow escape corridor."
+                },
+                "subplot": "subplot_frequency_map",
+                "delta": 3
+              },
+              "fail_outcome": {
+                "line": {
+                  "character": "char_narrator",
+                  "place": "place_resonance_ship",
+                  "dialogue": "The port crystal overloads under the sudden power surge. It cracks with a sound like breaking glass, and the ship's singing engine dies completely.",
+                  "stage_directions": "Both resonance panels are now dead. The ship begins to drift downward toward the hostile lattice."
+                },
+                "subplot": "subplot_frequency_map",
+                "delta": -2
+              }
+            },
+            {
+              "description": "Arthit pilots the ship through a narrow gap in the lattice formations, relying on his tattooed forbidden routes",
+              "difficulty": "medium",
+              "subplot": "subplot_haunted_ship",
+              "pass_outcome": {
+                "line": {
+                  "character": "char_arthit",
+                  "place": "place_resonance_ship",
+                  "dialogue": "There's a gap to starboard — old smuggler's route. The lattice won't expect a ship to go that way. Hold on to something.",
+                  "stage_directions": "Arthit's tattooed hands move the helm with practiced precision. The ship threads between rising crystal spires, missing them by meters."
+                },
+                "subplot": "subplot_haunted_ship",
+                "delta": 2
+              },
+              "fail_outcome": {
+                "line": {
+                  "character": "char_arthit",
+                  "place": "place_resonance_ship",
+                  "dialogue": "The gap's too narrow — the ship's too wide! Brace for impact!",
+                  "stage_directions": "The hull scrapes against a crystal spire. The sound is deafening. A new crack appears in the main deck."
+                },
+                "subplot": "subplot_haunted_ship",
+                "delta": -1
+              }
+            },
+            {
+              "description": "Malee jury-rigs the damaged starboard panel using her prosthetic crystal core as a temporary replacement",
+              "difficulty": "hard",
+              "subplot": "subplot_crystal_leg",
+              "pass_outcome": {
+                "line": {
+                  "character": "char_malee",
+                  "place": "place_resonance_ship",
+                  "dialogue": "My leg's crystal core can sub for the panel — it's the same lattice material. I'll take very good care of the wiring. Just give me thirty seconds.",
+                  "stage_directions": "Malee detaches her prosthetic's crystal core and slots it into the starboard panel housing. The ship's engine roars back to full power."
+                },
+                "subplot": "subplot_crystal_leg",
+                "delta": 3
+              },
+              "fail_outcome": {
+                "line": {
+                  "character": "char_malee",
+                  "place": "place_resonance_ship",
+                  "dialogue": "The connection won't hold! The prosthetic core isn't rated for engine output — it's burning out!",
+                  "stage_directions": "Smoke pours from the starboard panel. Malee collapses, clutching her leg where the prosthetic has gone dark and cold."
+                },
+                "subplot": "subplot_crystal_leg",
+                "delta": -3
+              }
+            }
+          ]
+        }
+      },
+      {
+        "id": "act_3",
+        "title": "The Fall",
+        "lines_before": [
+          {
+            "character": "char_narrator",
+            "place": "place_silent_zone",
+            "dialogue": "The Silent Zone. Where the lattice does not respond to sound. The ship's singing engine died two hours ago — not from damage, but from something worse. The lattice here simply... refuses.",
+            "stage_directions": "No hum. No vibration. No light from below. The crystalline sails hang dark and useless."
+          },
+          {
+            "character": "char_malee",
+            "place": "place_silent_zone",
+            "dialogue": "We're falling. Slowly, but we're falling. Without engine resonance, the ship has no lift. The anchor line won't reach the lattice from this height.",
+            "stage_directions": "Through the observation panel, the dark lattice stretches in every direction — jagged, unresponsive, indifferent."
+          },
+          {
+            "character": "char_pichit",
+            "place": "place_silent_zone",
+            "dialogue": "The recording crystal is still active. The frequency is stronger here — much stronger. The Silent Zone isn't dead. It's listening. It's waiting for the right voice.",
+            "stage_directions": "Pichit's staff pulses with faint light, the only light source in the gloomy cabin."
+          },
+          {
+            "character": "char_arthit",
+            "place": "place_silent_zone",
+            "dialogue": "My tattoos are reacting. Even in the dead zone, they're glowing. The old routes I memorized — they were recorded from a time when the lattice was different. More responsive.",
+            "stage_directions": "Arthit's tattooed skin glows faintly, ancient tonal notation visible in the dim cabin."
+          }
+        ],
+        "tag": "tag_027",
+        "lines_after": [
+          {
+            "character": "char_chanida",
+            "place": "place_silent_zone",
+            "dialogue": "I have an idea. The recording frequency — if I play it through the ship's anchor instead of the engine, the lattice might respond to direct contact. I'll try it.",
+            "stage_directions": "Chanida moves toward the anchor controls, determination in her eyes."
+          },
+          {
+            "character": "char_pichit",
+            "place": "place_silent_zone",
+            "dialogue": "I'll have a look at the anchor's resonance chamber. If the crystal is pure enough, it might still carry a frequency even in the dead zone.",
+            "stage_directions": "Pichit descends into the anchor housing, his staff providing the only light."
+          },
+          {
+            "character": "char_malee",
+            "place": "place_silent_zone",
+            "dialogue": "I'll get it — the anchor cable. I can rig a manual release so the anchor drops free instead of being lowered by the engine. Faster contact.",
+            "stage_directions": "Malee hauls herself toward the cable housing despite her damaged prosthetic, refusing to let injury stop her."
+          },
+          {
+            "character": "char_arthit",
+            "place": "place_silent_zone",
+            "dialogue": "Then I'll see you there — at the anchor. If this works, the lattice will respond and we'll have lift again. If it doesn't... well. It's been an honor, all of you.",
+            "stage_directions": "Arthit manages a thin smile, the tattoos on his arms glowing brighter as if responding to his resolve."
+          }
+        ],
+        "decision": {
+          "line": {
+            "character": "char_narrator",
+            "place": "place_silent_zone",
+            "dialogue": "The ship continues its slow descent toward the dark lattice. Each of the four has volunteered for a different part of the desperate repair. But the anchor crystal is cracked from the pirate attack, the cable release is jammed with crystalline residue, and the resonance chamber has never been used without engine power. One of them must take the lead.",
+            "stage_directions": "The deck tilts further. Through the viewport, crystal spires rise to meet them."
+          },
+          "choices": [
+            {
+              "description": "Chanida takes the lead, improvising a direct frequency injection into the anchor crystal using her tuning fork",
+              "difficulty": "hard",
+              "subplot": "subplot_frequency_map",
+              "pass_outcome": {
+                "line": {
+                  "character": "char_chanida",
+                  "place": "place_silent_zone",
+                  "dialogue": "The frequency works! The lattice is responding — look! The crystal around the anchor is lighting up!",
+                  "stage_directions": "Where the anchor touches the dark lattice, light spreads outward in ripples. The ship stops falling."
+                },
+                "subplot": "subplot_frequency_map",
+                "delta": 3
+              },
+              "fail_outcome": {
+                "line": {
+                  "character": "char_chanida",
+                  "place": "place_silent_zone",
+                  "dialogue": "Nothing! The lattice won't respond to the fork — the signal isn't strong enough!",
+                  "stage_directions": "The anchor crystal flickers once, then goes dark. The ship continues its descent."
+                },
+                "subplot": "subplot_frequency_map",
+                "delta": -2
+              }
+            },
+            {
+              "description": "Arthit guides the group using his tattooed routes, tracing a resonance pattern from memory directly onto the anchor crystal",
+              "difficulty": "medium",
+              "subplot": "subplot_haunted_ship",
+              "pass_outcome": {
+                "line": {
+                  "character": "char_arthit",
+                  "place": "place_silent_zone",
+                  "dialogue": "The old routes — they weren't just maps. They were songs. Songs the lattice used to sing. Listen...",
+                  "stage_directions": "Arthit traces his tattoo onto the anchor crystal with his finger. The crystal hums, then sings — a melody not heard since before the Silencing."
+                },
+                "subplot": "subplot_haunted_ship",
+                "delta": 3
+              },
+              "fail_outcome": {
+                "line": {
+                  "character": "char_arthit",
+                  "place": "place_silent_zone",
+                  "dialogue": "The pattern's wrong. The lattice has changed too much since these routes were recorded. It's like... singing to a deaf ear.",
+                  "stage_directions": "The anchor crystal hums briefly, then falls silent. The dark lattice remains unresponsive."
+                },
+                "subplot": "subplot_haunted_ship",
+                "delta": -1
+              }
+            },
+            {
+              "description": "Malee overrides the safety systems and manually drops the anchor, using raw physics rather than resonance to make contact",
+              "difficulty": "easy",
+              "subplot": "subplot_crystal_leg",
+              "pass_outcome": {
+                "line": {
+                  "character": "char_malee",
+                  "place": "place_silent_zone",
+                  "dialogue": "Forget the singing. Sometimes you just need to hit something hard enough to get its attention. Anchor away!",
+                  "stage_directions": "The anchor drops with a metallic shriek. It strikes the lattice with an impact that shakes the entire ship — and the lattice flares with light at the point of contact."
+                },
+                "subplot": "subplot_crystal_leg",
+                "delta": 2
+              },
+              "fail_outcome": {
+                "line": {
+                  "character": "char_malee",
+                  "place": "place_silent_zone",
+                  "dialogue": "The cable's stuck! There's too much crystalline buildup in the housing — I can't get it loose!",
+                  "stage_directions": "Malee strains against the jammed mechanism, but the cable won't release. The ship continues to fall."
+                },
+                "subplot": "subplot_crystal_leg",
+                "delta": -1
+              }
+            }
+          ]
+        }
+      },
+      {
+        "id": "act_4",
+        "title": "The Chamber",
+        "lines_before": [
+          {
+            "character": "char_narrator",
+            "place": "place_the_hollow",
+            "dialogue": "The anchor's impact cracked open the lattice surface, revealing a cavity beneath — a resonance chamber, vast and ancient, filled with crystal machinery that predates the skycities by millennia.",
+            "stage_directions": "Bioluminescent crystal formations light the space in colors that have no names. The air hums with frequencies that resonate in the bones."
+          },
+          {
+            "character": "char_pichit",
+            "place": "place_the_hollow",
+            "dialogue": "This is what I heard. This is what the monastery dismissed as hallucination. The lattice isn't a barrier — it's a shell. And something lives beneath it.",
+            "stage_directions": "Pichit's staff resonates in harmony with the chamber, creating overtones that seem to form words in an unknown language."
+          },
+          {
+            "character": "char_arthit",
+            "place": "place_the_hollow",
+            "dialogue": "...from that day... these are the coordinates of my old route. The one I lost my ship on. The lattice didn't destroy my crew. It was trying to show them this. And they were too afraid to listen.",
+            "stage_directions": "Arthit's tattoos glow brilliantly, matching the patterns on the chamber walls. His face is wet with tears he doesn't bother to hide."
+          },
+          {
+            "character": "char_narrator",
+            "place": "place_the_hollow",
+            "dialogue": "The chamber's central crystal activates, projecting a holographic map of the entire lattice — showing hundreds of safe routes that the Tonal Orders have never catalogued. The lattice has been trying to help humanity survive all along.",
+            "stage_directions": "The map rotates slowly, revealing connections between skycities that would cut travel time by half or more."
+          },
+          {
+            "character": "char_chanida",
+            "place": "place_the_hollow",
+            "dialogue": "Who would believe that?! The Orders have been charging us for passage through routes they don't even own! The lattice gives them freely!",
+            "stage_directions": "Chanida laughs and cries at the same time, her hands shaking as she records the map on her crystal tablet."
+          }
+        ],
+        "tag": "tag_008",
+        "lines_after": [
+          {
+            "character": "char_malee",
+            "place": "place_the_hollow",
+            "dialogue": "Could you please write it down for me? I want to remember this exact moment. The moment we learned we weren't alone up here.",
+            "stage_directions": "Malee's repaired prosthetic hums softly, its crystal core now attuned to the chamber's natural frequency. She smiles — a rare, genuine smile."
+          },
+          {
+            "character": "char_pichit",
+            "place": "place_the_hollow",
+            "dialogue": "He means it! — the lattice, I mean. Every frequency it ever played was an offer. A hand extended. We just didn't know the language.",
+            "stage_directions": "Pichit's staff projects a translation matrix onto the chamber wall, beginning the work of decoding the lattice's true speech."
+          },
+          {
+            "character": "char_chanida",
+            "place": "place_the_hollow",
+            "dialogue": "...smiling happily... I was right. All those unauthorized frequencies — they weren't trespassing. They were conversation. We were learning to talk to our own world.",
+            "stage_directions": "Chanida uploads the route data to every public resonance archive she can reach."
+          },
+          {
+            "character": "char_merchant",
+            "place": "place_the_hollow",
+            "dialogue": "Word spreads fast between skycities. I came as fast as I could — a trade ship following your signal. The Tonal Orders have already dispatched investigators.",
+            "stage_directions": "The trade negotiator's holographic projection flickers in the chamber, transmitted via the newly active resonance network."
+          }
+        ],
+        "decision": {
+          "line": {
+            "character": "char_narrator",
+            "place": "place_the_hollow",
+            "dialogue": "The chamber has given them a gift: a map of hidden safe routes, proof that the lattice is alive and communicative, and the knowledge that everything the Tonal Orders taught was incomplete at best, a lie at worst. But the Orders are coming. The pirates are still out there. And the lattice has shown them only the first of its many secrets. What they do next will reshape the world above.",
+            "stage_directions": "The holographic map pulses with unclaimed routes. The chamber's central crystal awaits their response, patient as stone."
+          },
+          "choices": [
+            {
+              "description": "Broadcast the route map to every skycity, breaking the Tonal Orders' monopoly forever",
+              "difficulty": "medium",
+              "subplot": "subplot_frequency_map",
+              "pass_outcome": {
+                "line": {
+                  "character": "char_chanida",
+                  "place": "place_the_hollow",
+                  "dialogue": "Everyone gets the map. No more fees. No more secrets. The lattice offered freely — so do we.",
+                  "stage_directions": "The route data floods every resonance archive in the skycity network. Within hours, ships are testing the new passages."
+                },
+                "subplot": "subplot_frequency_map",
+                "delta": 3
+              },
+              "fail_outcome": {
+                "line": {
+                  "character": "char_bandit",
+                  "place": "place_the_hollow",
+                  "dialogue": "He means it! The new routes — unguarded, uncharted, perfect for hunting. You just gave us a gift, Singer.",
+                  "stage_directions": "An intercepted transmission from the pirate vessel reveals they've already begun preying on ships using the new routes."
+                },
+                "subplot": "subplot_frequency_map",
+                "delta": -2
+              }
+            },
+            {
+              "description": "Share the discovery only with trusted allies, protecting it from both the Orders and pirates",
+              "difficulty": "easy",
+              "subplot": "subplot_listener_warning",
+              "pass_outcome": {
+                "line": {
+                  "character": "char_pichit",
+                  "place": "place_the_hollow",
+                  "dialogue": "The lattice entrusted us first. We should choose who to trust next. Not everyone is ready for this knowledge.",
+                  "stage_directions": "Pichit encodes the map with a tonal lock, protecting it until the right people can be found."
+                },
+                "subplot": "subplot_listener_warning",
+                "delta": 2
+              },
+              "fail_outcome": {
+                "line": {
+                  "character": "char_narrator",
+                  "place": "place_the_hollow",
+                  "dialogue": "Secrecy breeds suspicion. The Tonal Orders, denied access, declare the party enemies of the skycities. The gift becomes a burden of suspicion.",
+                  "stage_directions": "A transmission from Khrueang announces warrants for unauthorized lattice manipulation."
+                },
+                "subplot": "subplot_listener_warning",
+                "delta": -1
+              }
+            },
+            {
+              "description": "Return to the surface and tell the Groundless movement — the lattice surface can be inhabited safely",
+              "difficulty": "easy",
+              "subplot": "subplot_groundless",
+              "pass_outcome": {
+                "line": {
+                  "character": "char_malee",
+                  "place": "place_the_hollow",
+                  "dialogue": "The Groundless were right. We don't have to live in the sky. If we learn to speak to the lattice, the surface becomes home.",
+                  "stage_directions": "Malee's hand rests on the chamber wall, feeling the lattice's gentle vibration. For the first time, the surface doesn't feel like enemy territory."
+                },
+                "subplot": "subplot_groundless",
+                "delta": 2
+              },
+              "fail_outcome": {
+                "line": {
+                  "character": "char_arthit",
+                  "place": "place_the_hollow",
+                  "dialogue": "Who would believe that? A habitable surface? I lost my crew to that surface. One friendly chamber doesn't make it safe.",
+                  "stage_directions": "Arthit's grief surfaces, raw and unfiltered. The chamber's light seems to dim in response."
+                },
+                "subplot": "subplot_groundless",
+                "delta": 0
+              }
+            }
+          ]
+        }
+      }
+    ]
+  }
+]

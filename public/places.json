@@ -1,0 +1,26 @@
+{
+  "place_resonance_ship": {
+    "id": "place_resonance_ship",
+    "name": "The Khrueang's Whisper",
+    "picture": "",
+    "description": "A crystal-sailed ship sailing through the clouds"
+  },
+  "place_phrao_monastery": {
+    "id": "place_phrao_monastery",
+    "name": "Phrao Monastery",
+    "picture": "",
+    "description": "A monastery-city where Listener monks study the lattice"
+  },
+  "place_silent_zone": {
+    "id": "place_silent_zone",
+    "name": "The Silent Zone",
+    "picture": "",
+    "description": "A region where lattice resonance goes silent"
+  },
+  "place_the_hollow": {
+    "id": "place_the_hollow",
+    "name": "The Hollow",
+    "picture": "",
+    "description": "An ancient abandoned structure"
+  }
+}

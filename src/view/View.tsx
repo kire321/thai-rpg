@@ -176,6 +176,7 @@ const InfoCard: React.FC<{
   const imgUrl = picture && picture.startsWith('/') ? `${cmsBaseUrl}${picture}` : picture;
   return (
     <div className="flex-1 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 overflow-hidden flex flex-col">
+      {/* Label header */}
       <div className="px-3 py-2 bg-slate-200/50 dark:bg-slate-700/50 border-b border-slate-200 dark:border-slate-700">
         <p className="text-xs uppercase tracking-wider text-slate-600 dark:text-slate-400">{label}</p>
       </div>
@@ -543,74 +544,106 @@ const ImageCacheDiagnostics: React.FC = () => {
   const [open, setOpen] = React.useState(false);
   const [swCacheList, setSwCacheList] = React.useState<string>('checking...');
   const [contentCacheList, setContentCacheList] = React.useState<string>('checking...');
+  const [swStats, setSwStats] = React.useState<Record<string, any>>({});
+  const [swCacheUrls, setSwCacheUrls] = React.useState<string[]>([]);
   const [diagInfo, setDiagInfo] = React.useState<Record<string, any>>({});
 
-  React.useEffect(() => {
-    if (!open) return;
-    (async () => {
-      try {
-        const cacheNames = await caches.keys();
-        const contentCacheName = cacheNames.find((n) => n.includes('thai-rpg-content'));
-        if (contentCacheName) {
-          const cache = await caches.open(contentCacheName);
-          const keys = await cache.keys();
-          const files = keys.map((req) => req.url.split('/').pop() || req.url);
-          setContentCacheList(files.join(', ') || 'empty');
-        } else {
-          setContentCacheList('NO content cache found');
-        }
-
-        const swCacheName = cacheNames.find((n) => n.includes('thai-rpg') && !n.includes('content'));
-        if (swCacheName) {
-          const cache = await caches.open(swCacheName);
-          const keys = await cache.keys();
-          const imageKeys = keys.filter((req) => req.url.match(/\.(png|jpg|jpeg)$/));
-          setSwCacheList(`${imageKeys.length} images cached`);
-        } else {
-          setSwCacheList('NO SW cache found');
-        }
-      } catch (e: any) {
-        setSwCacheList('Error: ' + e.message);
-        setContentCacheList('Error: ' + e.message);
+  const refreshDiagnostics = React.useCallback(async () => {
+    try {
+      const cacheNames = await caches.keys();
+      const contentCacheName = cacheNames.find((n) => n.includes('thai-rpg-content'));
+      if (contentCacheName) {
+        const cache = await caches.open(contentCacheName);
+        const keys = await cache.keys();
+        setContentCacheList(keys.map((r) => r.url).join(', ') || 'empty');
+      } else {
+        setContentCacheList('NO content cache');
       }
+      const swCacheName = cacheNames.find((n) => n.includes('thai-rpg') && !n.includes('content'));
+      if (swCacheName) {
+        const cache = await caches.open(swCacheName);
+        const keys = await cache.keys();
+        const imgs = keys.filter((r) => r.url.match(/\.(png|jpg|jpeg)$/));
+        setSwCacheList(`${imgs.length} images (total ${keys.length})`);
+        setSwCacheUrls(keys.map((r) => r.url));
+      } else {
+        setSwCacheList('NO SW cache');
+      }
+    } catch (e: any) {
+      setSwCacheList('Err: ' + e.message);
+    }
+    try {
+      const ctrl = navigator.serviceWorker?.controller;
+      if (ctrl) {
+        const p1 = new Promise<Record<string, any>>((res) => {
+          const h = (ev: MessageEvent) => { if (ev.data?.type === 'SW_STATS') { navigator.serviceWorker.removeEventListener('message', h); res(ev.data.stats); } };
+          navigator.serviceWorker.addEventListener('message', h);
+          ctrl.postMessage('GET_SW_STATS');
+          setTimeout(() => res({}), 2000);
+        });
+        const p2 = new Promise<string[]>((res) => {
+          const h = (ev: MessageEvent) => { if (ev.data?.type === 'SW_CACHE_LIST') { navigator.serviceWorker.removeEventListener('message', h); res(ev.data.urls || []); } };
+          navigator.serviceWorker.addEventListener('message', h);
+          ctrl.postMessage('GET_SW_CACHE_LIST');
+          setTimeout(() => res([]), 2000);
+        });
+        const [s, u] = await Promise.all([p1, p2]);
+        setSwStats(s);
+        if (u.length) setSwCacheUrls(u);
+      }
+    } catch (e: any) {
+      setSwStats({ err: e.message });
+    }
+    setDiagInfo({
+      lastHidden: imageDiagnostics.lastHidden ? new Date(imageDiagnostics.lastHidden).toISOString() : 'never',
+      lastShown: imageDiagnostics.lastShown ? new Date(imageDiagnostics.lastShown).toISOString() : 'never',
+      retryCount: imageDiagnostics.retryCount,
+      brokenImages: imageDiagnostics.brokenImages,
+      lastError: imageDiagnostics.lastError,
+      swController: !!navigator.serviceWorker?.controller,
+      online: navigator.onLine,
+    });
+  }, []);
 
-      setDiagInfo({
-        lastHidden: imageDiagnostics.lastHidden ? new Date(imageDiagnostics.lastHidden).toISOString() : 'never',
-        lastShown: imageDiagnostics.lastShown ? new Date(imageDiagnostics.lastShown).toISOString() : 'never',
-        retryCount: imageDiagnostics.retryCount,
-        brokenImages: imageDiagnostics.brokenImages,
-        lastError: imageDiagnostics.lastError,
-        swController: !!navigator.serviceWorker?.controller,
-        online: navigator.onLine,
-      });
-    })();
-  }, [open]);
+  React.useEffect(() => { if (open) refreshDiagnostics(); }, [open, refreshDiagnostics]);
 
   return (
     <div className="mx-4 mb-4 border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden">
-      <button onClick={() => setOpen(!open)}
-        className="w-full flex items-center justify-between px-4 py-3 bg-slate-100 dark:bg-slate-700/50 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors">
+      <button onClick={() => setOpen(!open)} className="w-full flex items-center justify-between px-4 py-3 bg-slate-100 dark:bg-slate-700/50 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors">
         <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Image Cache Diagnostics</span>
         <span className="text-slate-500 dark:text-slate-400">{open ? '▾' : '▸'}</span>
       </button>
       {open && (
         <div className="px-4 py-3 bg-white dark:bg-slate-800 text-sm space-y-3">
           <div>
-            <p className="text-xs uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1">Content Cache (Cache API)</p>
+            <p className="text-xs uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1">Content Cache</p>
             <p className="text-xs text-slate-700 dark:text-slate-300 font-mono break-all">{contentCacheList}</p>
           </div>
           <div className="border-t border-slate-200 dark:border-slate-700 pt-2">
-            <p className="text-xs uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1">SW Image Cache</p>
+            <p className="text-xs uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1">SW Cache</p>
             <p className="text-xs text-slate-700 dark:text-slate-300 font-mono">{swCacheList}</p>
+            {swCacheUrls.length > 0 && (
+              <details className="mt-1"><summary className="text-[10px] text-slate-500 cursor-pointer">{swCacheUrls.length} URLs</summary>
+                <ul className="text-[9px] text-slate-500 font-mono max-h-24 overflow-y-auto">{swCacheUrls.map((u, i) => <li key={i}>{u}</li>)}</ul>
+              </details>
+            )}
+          </div>
+          <div className="border-t border-slate-200 dark:border-slate-700 pt-2">
+            <p className="text-xs uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1">SW Internal Stats</p>
+            <pre className="text-[10px] text-slate-500 dark:text-slate-400 font-mono overflow-x-auto whitespace-pre-wrap break-all">{JSON.stringify(swStats, null, 2)}</pre>
           </div>
           <div className="border-t border-slate-200 dark:border-slate-700 pt-2">
             <p className="text-xs uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1">Image Diagnostics</p>
             <pre className="text-[10px] text-slate-500 dark:text-slate-400 font-mono overflow-x-auto whitespace-pre-wrap break-all">{JSON.stringify(diagInfo, null, 2)}</pre>
           </div>
-          <button onClick={() => window.dispatchEvent(new CustomEvent('thai-rpg-retry-images'))}
-            className="w-full flex items-center justify-center gap-2 px-3 py-2 bg-amber-100 dark:bg-amber-900/30 hover:bg-amber-200 dark:hover:bg-amber-900/50 text-amber-700 dark:text-amber-300 rounded-lg text-xs transition-colors">
-            <Image className="w-4 h-4" /> Retry All Images
-          </button>
+          <div className="flex gap-2">
+            <button onClick={() => window.dispatchEvent(new CustomEvent('thai-rpg-retry-images'))} className="flex-1 flex items-center justify-center gap-2 px-3 py-2 bg-amber-100 dark:bg-amber-900/30 hover:bg-amber-200 dark:hover:bg-amber-900/50 text-amber-700 dark:text-amber-300 rounded-lg text-xs transition-colors">
+              <Image className="w-4 h-4" /> Retry Images
+            </button>
+            <button onClick={refreshDiagnostics} className="flex items-center justify-center gap-2 px-3 py-2 bg-slate-100 dark:bg-slate-700/50 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-lg text-xs transition-colors">
+              <RefreshCw className="w-4 h-4" />
+            </button>
+          </div>
         </div>
       )}
     </div>
@@ -620,6 +653,7 @@ const ImageCacheDiagnostics: React.FC = () => {
 // ===================== MAIN VIEW =====================
 
 export const View: React.FC<ViewProps> = (props) => {
+  // Wrap in try/catch to prevent crashes
   try {
     return <ViewInner {...props} />;
   } catch (e: any) {

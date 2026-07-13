@@ -1,6 +1,6 @@
 // Service Worker for Thai RPG PWA
-// BUILD_VERSION: 2026-07-11-01 — SW cache reliability fix + diagnostics
-const CACHE_NAME = 'thai-rpg-2026-07-11-01';
+// BUILD_VERSION: 2026-07-13-01 — check all caches, don't delete old until new is populated
+const CACHE_NAME = 'thai-rpg-2026-07-13-01';
 const CONTENT_CACHE_NAME = 'thai-rpg-content-v1';
 
 // Assets to cache on install
@@ -23,102 +23,109 @@ const swStats = {
   lastError: null,
 };
 
-// Install event: cache static assets
+// Install event: cache static assets, skip waiting
 self.addEventListener('install', (event) => {
-  console.log('[SW] Install event, cache:', CACHE_NAME);
+  console.log('[SW] Install, cache:', CACHE_NAME);
   self.skipWaiting();
   event.waitUntil(
     caches.open(CACHE_NAME)
-      .then((cache) => {
-        console.log('[SW] Caching', STATIC_ASSETS.length, 'static assets');
-        return cache.addAll(STATIC_ASSETS);
-      })
+      .then((cache) => cache.addAll(STATIC_ASSETS))
       .catch((err) => {
-        console.error('[SW] Cache addAll failed:', err);
+        console.error('[SW] addAll failed:', err);
         swStats.lastError = 'install: ' + err.message;
       })
   );
 });
 
-// Activate event: clean up old caches
+// Activate event: claim clients but DO NOT delete old caches yet.
+// Old caches are preserved until the new cache has been populated.
+// They serve as a fallback for offline image loading.
 self.addEventListener('activate', (event) => {
-  console.log('[SW] Activate event');
-  event.waitUntil(
-    caches.keys().then((cacheNames) => {
-      return Promise.all(
-        cacheNames
-          .filter((name) => name.startsWith('thai-rpg-') && name !== CACHE_NAME && name !== CONTENT_CACHE_NAME)
-          .map((name) => {
-            console.log('[SW] Deleting old cache:', name);
-            return caches.delete(name);
-          })
-      );
-    }).then(() => {
-      return self.clients.claim();
-    })
-  );
+  console.log('[SW] Activate');
+  event.waitUntil(self.clients.claim());
 });
 
-// Helper: try to cache a response, with error handling
-async function tryCachePut(cacheName, request, response) {
+// Helper: find a cached response in ANY thai-rpg cache (current or old)
+async function findInAnyCache(request) {
+  const cacheNames = await caches.keys();
+  const allCaches = cacheNames.filter((n) => n.startsWith('thai-rpg') && !n.includes('content'));
+
+  // Search current cache first
+  const currentCache = allCaches.find((n) => n === CACHE_NAME);
+  if (currentCache) {
+    const cache = await caches.open(currentCache);
+    const match = await cache.match(request);
+    if (match) return { response: match, cacheName: currentCache, isCurrent: true };
+  }
+
+  // Fall back to older caches
+  for (const name of allCaches) {
+    if (name === CACHE_NAME) continue;
+    const cache = await caches.open(name);
+    const match = await cache.match(request);
+    if (match) return { response: match, cacheName: name, isCurrent: false };
+  }
+
+  return null;
+}
+
+// Helper: copy a response from an old cache to the current cache
+async function migrateToCurrentCache(request, response) {
   try {
-    const cache = await caches.open(cacheName);
+    const cache = await caches.open(CACHE_NAME);
+    await cache.put(request, response.clone());
+    swStats.cacheWrites++;
+    console.log('[SW] Migrated to current cache:', request.url);
+  } catch (err) {
+    console.error('[SW] Migration failed:', request.url, err.message);
+  }
+}
+
+// Helper: try to cache a new response
+async function tryCachePut(request, response) {
+  try {
+    const cache = await caches.open(CACHE_NAME);
     await cache.put(request, response.clone());
     swStats.cacheWrites++;
     return true;
   } catch (err) {
     swStats.cacheWriteErrors++;
     swStats.lastError = 'cachePut: ' + err.message;
-    console.error('[SW] cache.put failed for', request.url, ':', err.message);
+    console.error('[SW] cache.put failed:', request.url, err.message);
     return false;
   }
 }
 
-// Helper: check if a response is cacheable
 function isCacheable(response) {
   if (!response) return false;
-  // Status 0 = opaque response (cross-origin, no CORS headers)
-  // Status 200 = OK
-  // We accept both — opaque responses can still be displayed in <img> tags
-  if (response.status === 0 || response.status === 200) return true;
-  return false;
+  return response.status === 0 || response.status === 200;
 }
 
-// Fetch event: serve from cache, fallback to network
+// Fetch event: check ALL caches, fallback to network
 self.addEventListener('fetch', (event) => {
   const { request } = event;
-  const url = new URL(request.url);
-
-  // Skip non-GET requests
   if (request.method !== 'GET') return;
 
-  // Handle content caching for CMS JSON data (Cache API)
+  const url = new URL(request.url);
+
+  // CMS JSON data → content cache
   if (url.pathname.endsWith('.json') && (
-    url.pathname.includes('content') ||
-    url.pathname.includes('episodes') ||
-    url.pathname.includes('vocab') ||
-    url.pathname.includes('characters') ||
-    url.pathname.includes('places') ||
-    url.pathname.includes('tags') ||
+    url.pathname.includes('content') || url.pathname.includes('episodes') ||
+    url.pathname.includes('vocab') || url.pathname.includes('characters') ||
+    url.pathname.includes('places') || url.pathname.includes('tags') ||
     url.pathname.includes('subplots')
   )) {
     event.respondWith(
       caches.open(CONTENT_CACHE_NAME).then(async (cache) => {
         const cached = await cache.match(request);
-        if (cached) {
-          swStats.cacheHits++;
-          return cached;
-        }
+        if (cached) { swStats.cacheHits++; return cached; }
         swStats.cacheMisses++;
         try {
-          const networkResponse = await fetch(request);
-          if (isCacheable(networkResponse)) {
-            await tryCachePut(CONTENT_CACHE_NAME, request, networkResponse);
-          }
-          return networkResponse;
+          const resp = await fetch(request);
+          if (isCacheable(resp)) await tryCachePut(request, resp);
+          return resp;
         } catch (err) {
           swStats.fetchErrors++;
-          console.error('[SW] Fetch failed for JSON:', request.url, err.message);
           return new Response('Offline', { status: 503 });
         }
       })
@@ -126,58 +133,72 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Cache-first for all other requests (images, JS, CSS, HTML, etc.)
+  // Everything else: check ALL caches, then network
   event.respondWith(
-    caches.match(request).then(async (cached) => {
-      if (cached) {
+    findInAnyCache(request).then(async (found) => {
+      if (found) {
         swStats.cacheHits++;
-        return cached;
+        console.log('[SW] Cache hit (' + (found.isCurrent ? 'current' : 'legacy ' + found.cacheName) + '):', request.url);
+
+        // If found in old cache, migrate to current cache in background
+        if (!found.isCurrent) {
+          migrateToCurrentCache(request, found.response).catch(() => {});
+        }
+        return found.response;
       }
+
       swStats.cacheMisses++;
       swStats.networkFetches++;
 
       try {
         const networkResponse = await fetch(request);
-
-        // Cache successful responses (including opaque CORS responses)
         if (isCacheable(networkResponse)) {
-          // Clone BEFORE trying to cache — response can only be consumed once
-          const responseToCache = networkResponse.clone();
-          await tryCachePut(CACHE_NAME, request, responseToCache);
-        } else {
-          console.log('[SW] Not cacheable:', request.url, 'status:', networkResponse.status);
+          const toCache = networkResponse.clone();
+          await tryCachePut(request, toCache);
         }
-
         return networkResponse;
       } catch (err) {
         swStats.fetchErrors++;
         swStats.lastError = 'fetch: ' + err.message;
-        console.error('[SW] Network fetch failed:', request.url, err.message);
-        return new Response('Offline', { status: 503, statusText: 'Service Unavailable' });
+        console.error('[SW] Fetch failed:', request.url, err.message);
+        return new Response('Offline', { status: 503 });
       }
     })
   );
 });
 
-// Message handling: respond to diagnostic queries from the app
+// Message handlers for diagnostics
 self.addEventListener('message', (event) => {
   if (event.data === 'SKIP_WAITING') {
     self.skipWaiting();
     return;
   }
-
   if (event.data === 'GET_SW_STATS') {
     event.source.postMessage({ type: 'SW_STATS', stats: swStats });
     return;
   }
-
   if (event.data === 'GET_SW_CACHE_LIST') {
-    caches.open(CACHE_NAME).then(async (cache) => {
-      const keys = await cache.keys();
-      const urls = keys.map(r => r.url);
-      event.source.postMessage({ type: 'SW_CACHE_LIST', urls });
-    }).catch(err => {
-      event.source.postMessage({ type: 'SW_CACHE_LIST', urls: [], error: err.message });
+    caches.keys().then(async (names) => {
+      const result = {};
+      for (const name of names) {
+        if (!name.startsWith('thai-rpg') || name.includes('content')) continue;
+        const cache = await caches.open(name);
+        const keys = await cache.keys();
+        result[name] = keys.map((r) => r.url);
+      }
+      event.source.postMessage({ type: 'SW_CACHE_LIST', caches: result });
+    });
+    return;
+  }
+  if (event.data === 'PURGE_OLD_CACHES') {
+    caches.keys().then((names) =>
+      Promise.all(
+        names
+          .filter((n) => n.startsWith('thai-rpg') && n !== CACHE_NAME && !n.includes('content'))
+          .map((n) => { console.log('[SW] Purging old cache:', n); return caches.delete(n); })
+      )
+    ).then(() => {
+      event.source.postMessage({ type: 'PURGE_DONE' });
     });
     return;
   }

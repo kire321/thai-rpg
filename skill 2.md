@@ -203,6 +203,28 @@ console.assert(props.currentActTag === 'Greetings', 'Should show human-readable 
 | `test-user-journey.js`         | Full 2-day activity simulation                                    |
 | `test-diagnostics.js`          | Diagnostic displays share code paths                              |
 
+### SW Cache Testing with Playwright
+
+To reproduce image caching bugs, use Playwright + local HTTP server:
+
+```javascript
+// test-sw-cache-repro pattern:
+// 1. Serve the built app on localhost
+// 2. Open Chromium headless, load the page
+// 3. Navigate to episode with images (SW caches them)
+// 4. Use page.route('**/*', route => route.abort('internetdisconnected'))
+//    to simulate offline (blocks at browser level)
+// 5. Reload the page / trigger image re-render
+// 6. Check if images load from SW cache
+```
+
+Key files for SW cache testing:
+- `test-cache-repro.html` — test page with controls
+- `test-cache-repro-sw.js` — minimal SW with detailed logging
+- `test-sw-v1.js` / `test-sw-v2.js` / `test-sw-v3.js` — SW versions for cache migration testing
+- `test-image.png` — local 1x1 PNG for CORS-free testing
+- `test-sw-fix-verified.mjs` — Playwright test that verifies the fix
+
 ### Running Tests
 
 ```bash
@@ -318,8 +340,17 @@ The project is deployed to Cloudflare Pages as `thai-rpg`.
 
 ### Broken images after app backgrounding (mobile)
 
-**Cause**: `CachedImage` rendered a permanent `<div>` placeholder when `onError` fired. The `visibilitychange` handler tried to retry `<img>` elements, but failed images were replaced with `<div>` placeholders — so the handler could never find them to retry.
-**Fix**: `CachedImage` now listens for a custom `'thai-rpg-retry-images'` event dispatched on `visibilitychange`. Failed images reset `loadFailed` state and remount with a new `key`. Added `ImageCacheDiagnostics` component in Settings drawer for debugging.
+**Real root cause**: When the SW cache version is bumped, the activate handler deletes ALL old caches. The new cache starts empty. Users who go offline before the new SW has a chance to re-cache images are left with broken images. The user's browser had 27 images in the old cache — all deleted.
+
+**Previous partial fix**: `CachedImage` retries on `visibilitychange` via a custom `'thai-rpg-retry-images'` event. This helps when the image load failed transiently, but does NOT help when the image was never cached in the first place.
+
+**Full fix** (in `public/sw.js`):
+- `findInAnyCache()` searches ALL thai-rpg caches, not just the current one
+- Images found in old caches are served AND migrated to the current cache in background
+- Old caches are preserved as read-only backup (not deleted on activate)
+- `PURGE_OLD_CACHES` message handler available for manual cleanup
+
+**How to verify**: Use `test-sw-fix-verified.mjs` which reproduces the exact scenario with Playwright.
 
 ### "[None]" dialogue when offline
 
@@ -351,6 +382,9 @@ The project is deployed to Cloudflare Pages as `thai-rpg`.
 4. **Don't fix data, fix code**: CMS data is messy and will stay messy. Handle it at render time with `normalizeLine()`.
 5. **No unit tests, only user journey tests**: The project tests by simulating handlers and asserting `getProps`. This catches integration issues that unit tests miss.
 6. **Unified code paths**: Episode selection and diagnostic displays must share the same functions (`getNextEpisode`, `countDueCardsInEpisode`). If they diverge, diagnostics lie.
+7. **SW cache: never delete old caches on activate**: Deleting old caches before the new cache is populated breaks offline images. Search all caches and migrate entries in background.
+8. **Reproduce before fixing**: The broken images bug had a partial fix (retry on visibilitychange) that masked the real issue. Only a full Playwright reproduction revealed that old caches were being deleted.
+9. **`<img crossorigin="anonymous">` creates CORS-mode requests**: The SW must handle CORS responses properly. Opaque responses (status 0) from no-cors fetches are cacheable but may not display with `crossorigin="anonymous"`.
 
 ***
 

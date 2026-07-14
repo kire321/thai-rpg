@@ -1,14 +1,14 @@
 // Service Worker for Thai RPG PWA
-// BUILD_VERSION: 2026-07-13-01 — check all caches, don't delete old until new is populated
-const CACHE_NAME = 'thai-rpg-2026-07-13-01';
+// BUILD_VERSION: 2026-07-14-01 — resilient install + findInAnyCache + SW-ready retry
+const CACHE_NAME = 'thai-rpg-2026-07-14-01';
 const CONTENT_CACHE_NAME = 'thai-rpg-content-v1';
 
-// Assets to cache on install
+// Assets to cache on install. Each is cached INDIVIDUALLY so one failure
+// doesn't block the others. Missing files are skipped gracefully.
 const STATIC_ASSETS = [
   '/',
   '/index.html',
   '/manifest.json',
-  '/icon-192x192.png',
   '/icon-512x512.png',
 ];
 
@@ -20,20 +20,43 @@ const swStats = {
   cacheWriteErrors: 0,
   cacheWrites: 0,
   fetchErrors: 0,
+  installErrors: [],
   lastError: null,
 };
 
-// Install event: cache static assets, skip waiting
+// Install event: cache static assets one-by-one, skip waiting.
+// Unlike cache.addAll() which is atomic (one failure = total failure),
+// this approach caches whatever succeeds and logs what fails.
 self.addEventListener('install', (event) => {
   console.log('[SW] Install, cache:', CACHE_NAME);
   self.skipWaiting();
+  swStats.installErrors = [];
+
   event.waitUntil(
-    caches.open(CACHE_NAME)
-      .then((cache) => cache.addAll(STATIC_ASSETS))
-      .catch((err) => {
-        console.error('[SW] addAll failed:', err);
-        swStats.lastError = 'install: ' + err.message;
-      })
+    caches.open(CACHE_NAME).then(async (cache) => {
+      const results = await Promise.allSettled(
+        STATIC_ASSETS.map(async (url) => {
+          try {
+            const resp = await fetch(url);
+            if (resp.ok || resp.status === 0) {
+              await cache.put(url, resp);
+              console.log('[SW] Cached:', url);
+            } else {
+              console.warn('[SW] Skipped (status ' + resp.status + '):', url);
+              swStats.installErrors.push(url + ': ' + resp.status);
+            }
+          } catch (err) {
+            console.warn('[SW] Skipped (fetch error):', url, err.message);
+            swStats.installErrors.push(url + ': ' + err.message);
+          }
+        })
+      );
+      const succeeded = results.filter(r => r.status === 'fulfilled').length;
+      console.log('[SW] Install complete:', succeeded, '/', STATIC_ASSETS.length, 'assets cached');
+      if (swStats.installErrors.length > 0) {
+        swStats.lastError = 'install: ' + swStats.installErrors.join(', ');
+      }
+    })
   );
 });
 

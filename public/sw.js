@@ -1,6 +1,6 @@
 // Service Worker for Thai RPG PWA
-// BUILD_VERSION: 2026-07-14-01 — resilient install + findInAnyCache + SW-ready retry
-const CACHE_NAME = 'thai-rpg-2026-07-14-01';
+// BUILD_VERSION: 2026-07-19-02 — Vary-proof caching: strip Vary on write, ignoreVary on read
+const CACHE_NAME = 'thai-rpg-2026-07-19-02';
 const CONTENT_CACHE_NAME = 'thai-rpg-content-v1';
 
 // Assets to cache on install. Each is cached INDIVIDUALLY so one failure
@@ -68,6 +68,26 @@ self.addEventListener('activate', (event) => {
   event.waitUntil(self.clients.claim());
 });
 
+// The CMS sends "Vary: Origin". Cache matching then compares the REQUEST's
+// Origin header — which differs between <img crossorigin> requests (Origin
+// present), page cache.match(url) calls (no Origin), and SW-constructed
+// Requests (no Origin). Entries cached via one path become invisible to the
+// others: images that ARE cached still 503 offline.
+// Fix: strip Vary when writing (new entries match any request for the URL)
+// and match with ignoreVary (legacy entries stay readable).
+function stripVaryHeader(response) {
+  // Opaque responses can't be inspected or rebuilt — store as-is
+  if (!response || response.type === 'opaque' || response.status === 0) return response;
+  if (!response.headers.get('vary')) return response;
+  const headers = new Headers(response.headers);
+  headers.delete('vary');
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
+}
+
 // Helper: find a cached response in ANY thai-rpg cache (current or old)
 async function findInAnyCache(request) {
   const cacheNames = await caches.keys();
@@ -77,7 +97,7 @@ async function findInAnyCache(request) {
   const currentCache = allCaches.find((n) => n === CACHE_NAME);
   if (currentCache) {
     const cache = await caches.open(currentCache);
-    const match = await cache.match(request);
+    const match = await cache.match(request, { ignoreVary: true });
     if (match) return { response: match, cacheName: currentCache, isCurrent: true };
   }
 
@@ -85,7 +105,7 @@ async function findInAnyCache(request) {
   for (const name of allCaches) {
     if (name === CACHE_NAME) continue;
     const cache = await caches.open(name);
-    const match = await cache.match(request);
+    const match = await cache.match(request, { ignoreVary: true });
     if (match) return { response: match, cacheName: name, isCurrent: false };
   }
 
@@ -96,7 +116,7 @@ async function findInAnyCache(request) {
 async function migrateToCurrentCache(request, response) {
   try {
     const cache = await caches.open(CACHE_NAME);
-    await cache.put(request, response.clone());
+    await cache.put(request, stripVaryHeader(response.clone()));
     swStats.cacheWrites++;
     console.log('[SW] Migrated to current cache:', request.url);
   } catch (err) {
@@ -108,7 +128,7 @@ async function migrateToCurrentCache(request, response) {
 async function tryCachePut(request, response) {
   try {
     const cache = await caches.open(CACHE_NAME);
-    await cache.put(request, response.clone());
+    await cache.put(request, stripVaryHeader(response.clone()));
     swStats.cacheWrites++;
     return true;
   } catch (err) {
@@ -131,27 +151,43 @@ self.addEventListener('fetch', (event) => {
 
   const url = new URL(request.url);
 
-  // CMS JSON data → content cache
+  // CMS JSON data → content cache.
+  // NETWORK-FIRST so online users always get fresh content (the page adds a
+  // ?t= cache-buster; we strip it when caching so entries stay matchable).
+  // Offline, fall back to a cached copy ignoring query params.
   if (url.pathname.endsWith('.json') && (
     url.pathname.includes('content') || url.pathname.includes('episodes') ||
     url.pathname.includes('vocab') || url.pathname.includes('characters') ||
     url.pathname.includes('places') || url.pathname.includes('tags') ||
     url.pathname.includes('subplots')
   )) {
+    // Normalize: cache under the URL WITHOUT the ?t= cache-buster
+    const cleanUrl = url.origin + url.pathname;
     event.respondWith(
-      caches.open(CONTENT_CACHE_NAME).then(async (cache) => {
-        const cached = await cache.match(request);
-        if (cached) { swStats.cacheHits++; return cached; }
-        swStats.cacheMisses++;
+      (async () => {
         try {
           const resp = await fetch(request);
-          if (isCacheable(resp)) await tryCachePut(request, resp);
+          swStats.networkFetches++;
+          if (isCacheable(resp)) {
+            try {
+              const cache = await caches.open(CONTENT_CACHE_NAME);
+              await cache.put(cleanUrl, stripVaryHeader(resp.clone()));
+              swStats.cacheWrites++;
+            } catch (err) {
+              swStats.cacheWriteErrors++;
+            }
+          }
           return resp;
         } catch (err) {
+          // Offline: serve cached copy (ignore the ?t= cache-buster)
+          const cache = await caches.open(CONTENT_CACHE_NAME);
+          const cached = await cache.match(cleanUrl, { ignoreSearch: true, ignoreVary: true }) || await cache.match(request, { ignoreSearch: true, ignoreVary: true });
+          if (cached) { swStats.cacheHits++; return cached; }
+          swStats.cacheMisses++;
           swStats.fetchErrors++;
           return new Response('Offline', { status: 503 });
         }
-      })
+      })()
     );
     return;
   }
@@ -190,7 +226,43 @@ self.addEventListener('fetch', (event) => {
   );
 });
 
-// Message handlers for diagnostics
+// Bulk-cache a list of URLs (used for image prefetch/repair).
+// Each URL is handled INDIVIDUALLY: already-cached URLs are skipped,
+// failures don't block the rest, and every URL is retried once.
+// Reports progress back to the requesting client when done.
+async function cacheUrls(urls, client) {
+  const unique = [...new Set(urls)];
+  const results = { total: unique.length, alreadyCached: 0, cached: [], failed: [] };
+  for (const url of unique) {
+    try {
+      const existing = await findInAnyCache(url);
+      if (existing) { results.alreadyCached++; continue; }
+      let ok = false;
+      for (let attempt = 0; attempt < 2 && !ok; attempt++) {
+        try {
+          const resp = await fetch(new Request(url, { mode: 'cors' }));
+          swStats.networkFetches++;
+          if (isCacheable(resp)) {
+            ok = await tryCachePut(url, resp);
+          }
+        } catch (err) {
+          swStats.fetchErrors++;
+          console.warn('[SW] CACHE_URLS fetch failed (attempt ' + (attempt + 1) + '):', url, err.message);
+        }
+      }
+      if (ok) results.cached.push(url);
+      else results.failed.push(url);
+    } catch (err) {
+      results.failed.push(url);
+    }
+  }
+  console.log('[SW] CACHE_URLS done:', results.cached.length, 'cached,', results.alreadyCached, 'already,', results.failed.length, 'failed');
+  if (client) {
+    client.postMessage({ type: 'CACHE_URLS_DONE', results });
+  }
+}
+
+// Message handlers for diagnostics and bulk caching
 self.addEventListener('message', (event) => {
   if (event.data === 'SKIP_WAITING') {
     self.skipWaiting();
@@ -198,6 +270,11 @@ self.addEventListener('message', (event) => {
   }
   if (event.data === 'GET_SW_STATS') {
     event.source.postMessage({ type: 'SW_STATS', stats: swStats });
+    return;
+  }
+  if (event.data && event.data.type === 'CACHE_URLS' && Array.isArray(event.data.urls)) {
+    // Keep the SW alive until the bulk caching job finishes
+    event.waitUntil(cacheUrls(event.data.urls, event.source));
     return;
   }
   if (event.data === 'GET_SW_CACHE_LIST') {

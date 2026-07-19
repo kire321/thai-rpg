@@ -7,6 +7,9 @@ import { inspectAttr } from 'plugin-inspect-react-code'
 export default defineConfig({
   base: './',
   plugins: [inspectAttr(), react()],
+  define: {
+    __APP_VERSION__: JSON.stringify(new Date().toISOString()),
+  },
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),

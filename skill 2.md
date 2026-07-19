@@ -25,6 +25,16 @@ Thai RPG is a **Progressive Web App (PWA)** for learning Thai vocabulary through
    * add anything you learned that would be helpful in the future
 4. Deploy to cloudflare.
 5. Push your code and changes and the changes to this skill file to github.
+6. Write your reply following the **Writing Your Reply** section below.
+
+## Writing Your Reply
+
+When you reply, don't claim to have completed the user's objective. Instead:
+
+* describe in technical detail what you did (most of your reply should be dedicated to this section)
+* [if you think the task isn't finished yet] ask the user for information to help you complete the task
+* [if you think the task is finished] ask the user if their objective was completed (briefly restate the objective from the prompt to avoid referring to "your objective" in abstract terms)
+* suggest further actions you could do that might help the user's objective
 
 ## Directory Structure
 
@@ -338,19 +348,21 @@ The project is deployed to Cloudflare Pages as `thai-rpg`.
 
 ## Common Bugs and Their Fixes
 
-### Broken images after app backgrounding (mobile)
+### Broken images after app backgrounding (mobile) — FULL root cause chain (2026-07-19)
 
-**Real root cause**: When the SW cache version is bumped, the activate handler deletes ALL old caches. The new cache starts empty. Users who go offline before the new SW has a chance to re-cache images are left with broken images. The user's browser had 27 images in the old cache — all deleted.
+This bug kept "being fixed" and coming back because there were FOUR stacked causes. All four are now fixed and covered by Playwright tests (`src/test/test-offline-images.mjs` — start with this one).
 
-**Previous partial fix**: `CachedImage` retries on `visibilitychange` via a custom `'thai-rpg-retry-images'` event. This helps when the image load failed transiently, but does NOT help when the image was never cached in the first place.
+**Cause 1 — Prefetch races SW control, then lies about it.** `prefetchImages()` fired right after content load without ensuring the page was SW-controlled. On first visits / slow SW startup / SW restarts, the image fetches bypassed the SW entirely (never cached), yet the log claimed "Prefetched 20/20" — it only counted fetch resolutions, and the SW's offline 503 responses also RESOLVE fetches, so even offline prefetches logged success. **Never trust a prefetch log; verify cache membership via the Cache API.**
 
-**Full fix** (in `public/sw.js`):
-- `findInAnyCache()` searches ALL thai-rpg caches, not just the current one
-- Images found in old caches are served AND migrated to the current cache in background
-- Old caches are preserved as read-only backup (not deleted on activate)
-- `PURGE_OLD_CACHES` message handler available for manual cleanup
+**Cause 2 — Cache gaps are permanent.** Aborted navigations, flaky network, and eviction leave some images uncached; nothing ever re-checked. The user's device had 21/27 images cached for weeks; the missing ones (narrator.png, khrueang_market.png) broke whenever an offline line referenced them. **Fix: verify-and-repair loop** — `ensureImagesCached()` in Store.tsx runs on content load, on `online`, and on every foreground return; it does a cheap gap check and re-caches missing images via the SW's `CACHE_URLS` message handler.
 
-**How to verify**: Use `test-sw-fix-verified.mjs` which reproduces the exact scenario with Playwright.
+**Cause 3 — `Vary: Origin` makes cached entries invisible to other request kinds.** The CMS sends `Vary: Origin`. Cache matching compares the REQUEST's Origin header: `<img crossorigin>` requests carry Origin, page `cache.match(url)` string lookups carry none, SW-constructed `new Request(url)` carry none. An entry written via one path is a MISS for the others — images that ARE in the cache still 503 offline. **Fix: strip `Vary` when writing (`stripVaryHeader` in sw.js), match with `{ignoreVary: true}` when reading (both sw.js and Store's verification).**
+
+**Cause 4 (previously fixed) — old caches deleted on activate.** Stay vigilant: never delete old caches on activate; `findInAnyCache()` searches all `thai-rpg*` caches and migrates hits into the current one.
+
+**Repo archaeology worth knowing**: commit 2b0c7d3 ("Merge fubar + image cache retry fix") was NOT a real merge — it took fubar's controller/View but kept the OLD 175-line Store.tsx, silently dropping fubar's 992-line Store (content loading for episodes/characters/places, image prefetch). The production app was deployed from an uncommitted hybrid tree (fubar Store + fubar controller + master View + master sw.js). On 2026-07-19 the fubar Store/controller/types were restored onto master, so master now matches production again. Fubar's user-journey tests (`src/test/test-*.mjs`) were also restored; `test-bugs.mjs` (SM-2 preview: expected 50d got 40d) and `test-episode-flow.mjs` (outcome stage_directions array) were ALREADY failing on fubar's controller before this fix — pre-existing, not regressions.
+
+**Offline test harness** (`src/test/`): `cms-mirror.py` serves a local copy of the CMS with failure injection (`/__control__?block=a.png,b.png`, `?offline=1`) — this fails fetches for BOTH page and SW, which Playwright's `route.abort` CANNOT do (Playwright does not intercept SW-initiated fetches, and its offline emulation behaves differently from real airplane mode). Populate the mirror from the live CMS (download the 6 JSONs + all `picture` images), serve `dist/` on :8088 and the mirror on :9001, then run `node src/test/test-offline-images.mjs` (full user journey), `test-first-visit.mjs` (prefetch/SW race), `test-legacy-cache.mjs` (old-cache compat). Seed `cmsBaseUrl` via `addInitScript` into `thai-rpg-state`.
 
 ### "[None]" dialogue when offline
 
@@ -385,6 +397,10 @@ The project is deployed to Cloudflare Pages as `thai-rpg`.
 7. **SW cache: never delete old caches on activate**: Deleting old caches before the new cache is populated breaks offline images. Search all caches and migrate entries in background.
 8. **Reproduce before fixing**: The broken images bug had a partial fix (retry on visibilitychange) that masked the real issue. Only a full Playwright reproduction revealed that old caches were being deleted.
 9. **`<img crossorigin="anonymous">` creates CORS-mode requests**: The SW must handle CORS responses properly. Opaque responses (status 0) from no-cors fetches are cacheable but may not display with `crossorigin="anonymous"`.
+10. **`Vary: Origin` breaks Cache API matching across request kinds**: `<img crossorigin>` (Origin present), `cache.match(url)` (no Origin), and SW-built `new Request(url)` (no Origin) are three different cache keys when the response has `Vary: Origin`. Strip `Vary` on write AND use `ignoreVary` on read.
+11. **Playwright cannot intercept service-worker fetches**: `context.route()` and `setOffline()` do not affect requests the SW makes itself, and emulation differs from real airplane mode. For faithful offline tests, run a local origin you can actually kill (see `cms-mirror.py`).
+12. **Verify, don't log**: any "prefetch succeeded" claim must be backed by a Cache API membership check. A `fetch()` that resolves is not evidence of caching — the SW's offline 503 also resolves.
+13. **Merges can silently drop files**: 2b0c7d3 dropped fubar's Store.tsx and master shipped a broken hybrid for weeks. After any merge, diff the tree against BOTH parents and against what's actually deployed.
 
 ***
 

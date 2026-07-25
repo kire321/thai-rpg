@@ -325,24 +325,53 @@ Key function: `countDueCardsInEpisode()` shares code path with diagnostics.
 The project is deployed to Cloudflare Pages as `thai-rpg`.
 **Production URL**: `https://thai-rpg.pages.dev`
 
-**Deployment method** (verified working):
-1. **Build**: `cd app && npm run build` — must succeed with zero errors.
-2. **Deploy static files**: Use `mshtools-deploy_website` tool with `type: "static"` and `local_dir` pointing to `app/dist`. This uploads all built assets.
-3. **Proxy to Cloudflare Pages**: The Cloudflare Pages project uses a `_worker.js` that proxies requests to the deploy_website URL. To update:
-   - Use Cloudflare MCP `execute` to create a new deployment with updated `_worker.js`
-   - The worker script: `export default { async fetch(request) { const url = new URL(request.url); const target = 'https://<deploy-url>.kimi.page' + url.pathname + url.search; return fetch(new Request(target, {method: request.method, headers: request.headers, body: request.body, redirect: 'follow'})); } };`
-4. **Bump SW cache version**: Edit `app/public/sw.js` — change `CACHE_NAME` and update `BUILD_VERSION` comment.
+**Deployment method** (verified working — follow this exactly, do NOT try to upload assets to Cloudflare Pages directly):
+
+The production site is a thin Cloudflare Pages `_worker.js` that proxies every request to a `*.kimi.page` URL hosting the built app. Deploying = deploy the new build to kimi.page, then point the proxy at the new URL.
+
+1. **Bump SW cache version**: Edit `app/public/sw.js` — change `CACHE_NAME` and update `BUILD_VERSION` comment.
+2. **Build**: `cd app && npm install && npm run build` — must succeed with zero errors. Note: the build embeds a timestamp (`__APP_VERSION__`), so the JS bundle filename changes every build.
+3. **Deploy static files**: Use `mshtools-website_version_manager` with `action: "build_version"`, `type: "static"`, `project_dir` = the project root (containing `dist/` after the build). The tool returns a version ID; **the preview URL (`https://<id-or-slug>.kimi.page`) is shown on the frontend version card — you need that exact URL for the next step.** If the tool result shows no URL, get it from the version card before touching Cloudflare; do not guess URL patterns (wildcard `*.kimi.page` hosts return 404 for other tenants).
+4. **Update the Cloudflare Pages proxy** via Cloudflare MCP `execute` (the `/pages/assets/*` upload-token flow and direct worker-version PUTs do NOT work — see pitfalls below):
+   a. Compute the asset hash: `sha256(_worker.js)` as hex, truncated to 32 chars.
+   b. `POST /accounts/{accountId}/workers/scripts/pages-worker--16090577-production/assets-upload-session` with body `{"manifest": {"/_worker.js": {"hash": "<hash32>", "size": <bytes>}}}` → returns a JWT (audience `api.workers.cloudflare.com`).
+   c. Upload the asset **from a local shell** (the MCP execute sandbox blocks egress to `api.workers.cloudflare.com`):
+      `curl -X POST "https://api.workers.cloudflare.com/client/v4/accounts/{accountId}/workers/assets/upload?base64=true" -H "Authorization: Bearer <jwt>" -F "<hash32>=@worker.b64;type=application/javascript;filename=<hash32>"` where `worker.b64` is the base64-encoded `_worker.js`. Retry a few times on HTTP 522.
+   d. `POST /accounts/{accountId}/pages/projects/thai-rpg/deployments` as multipart/form-data with a single field `manifest` = `{"/_worker.js": "<hash32>"}` (JSON, path keys have a leading slash). **The new deployment goes LIVE immediately.**
+   e. Verify `https://thai-rpg.pages.dev`: `sw.js` shows the new `CACHE_NAME`, the bundle path referenced by `index.html` returns 200, `/icon-512x512.png` returns 200. If anything fails, roll back: `POST /accounts/{accountId}/pages/projects/thai-rpg/deployments/{previous-deployment-id}/rollback` (site recovers in ~20s).
 5. **Push code**: Use GitHub MCP to push changes to the `master` branch.
 
-**Alternative**: If the proxy worker approach is problematic, you can deploy files directly to Cloudflare Pages using the MCP `execute` tool with `rawBody: true` and a multipart form-data body. However, binary files (PNG) are difficult to upload this way — the proxy approach is more reliable.
+**Proxy `_worker.js`** (only the target URL changes between deploys):
+
+```js
+export default {
+  async fetch(request) {
+    const url = new URL(request.url);
+    const target = 'https://<deploy-url>.kimi.page' + url.pathname + url.search;
+    return fetch(new Request(target, {
+      method: request.method,
+      headers: request.headers,
+      body: ['GET', 'HEAD'].includes(request.method) ? undefined : request.body,
+      redirect: 'follow',
+    }));
+  },
+};
+```
+
+**Pitfalls (all verified, do not retry these):**
+- `GET .../pages/projects/thai-rpg/upload-token` returns a JWT that `/pages/assets/check-missing` and `/pages/assets/upload` reject (8000013) — the wrangler Pages direct-upload flow is dead for this auth scheme.
+- Uploading assets via the Workers assets-upload-session and referencing them in a Pages deployment manifest serves 500s — Pages cannot see the Workers asset store. Only `_worker.js` (the proxy) works this way because Pages Functions load it from that store.
+- `PUT`ing a version directly to the backing worker `pages-worker--16090577-production` succeeds but receives no `pages.dev` traffic — Pages pins traffic to its canonical Pages deployment.
+- Creating ANY Pages deployment makes it live instantly, including a broken one. Always have the previous deployment ID ready for rollback.
 
 ### Deployment Checklist
 
 1. Bump SW cache version in `app/public/sw.js`
-2. `npm run build` — zero errors
-3. `mshtools-deploy_website` to deploy static files
-4. Update proxy worker via Cloudflare MCP if the deploy URL changed
-5. Push to GitHub master
+2. `npm install && npm run build` — zero errors
+3. `mshtools-website_version_manager` `build_version` (`type: "static"`) → get the `*.kimi.page` preview URL from the version card
+4. Update proxy `_worker.js` with the new URL and deploy via the 5-step Cloudflare procedure above
+5. Verify live site (sw.js CACHE_NAME, bundle 200, icon 200); roll back on failure
+6. Push to GitHub master
 
 ***
 

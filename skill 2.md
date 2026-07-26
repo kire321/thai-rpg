@@ -27,6 +27,13 @@ Thai RPG is a **Progressive Web App (PWA)** for learning Thai vocabulary through
 5. Push your code and changes and the changes to this skill file to github.
 6. Write your reply following the **Writing Your Reply** section below.
 
+## GitHub Access (PAT vs MCP)
+
+Two ways to access GitHub, in order of preference:
+
+1. **User-provided fine-grained PAT via plain `git` over HTTPS (preferred when available)**: use `https://x-access-token:<PAT>@github.com/kire321/thai-rpg.git` in one-off `git clone`/`fetch`/`push` commands. Advantages over the MCP plugin: works when the MCP server fails to connect (it has); pushes files straight from local disk — the MCP `create_or_update_file` requires retyping entire file contents into tool parameters, which is slow and error-prone for large files like this skill file; keeps local git in sync so `git checkout` is safe. **SECURITY: never save the PAT in git config, never write it to any file, never commit or publish it anywhere — use it only inline in one-off commands, and scrub it from the remote URL afterwards (`git remote set-url origin https://github.com/kire321/thai-rpg.git`).**
+2. **GitHub MCP plugin**: fine for browsing, reads, and small file updates when connected. It commits without touching local git — after any MCP push, the local repo is stale; re-sync (`git fetch` + `git reset --hard`) before any `git checkout`, or tracked files silently revert to old commits (this once broke a build by reverting `src/types/index.ts`).
+
 ## Writing Your Reply
 
 When you reply, don't claim to have completed the user's objective. Instead:
@@ -363,6 +370,7 @@ export default {
 - Uploading assets via the Workers assets-upload-session and referencing them in a Pages deployment manifest serves 500s — Pages cannot see the Workers asset store. Only `_worker.js` (the proxy) works this way because Pages Functions load it from that store.
 - `PUT`ing a version directly to the backing worker `pages-worker--16090577-production` succeeds but receives no `pages.dev` traffic — Pages pins traffic to its canonical Pages deployment.
 - Creating ANY Pages deployment makes it live instantly, including a broken one. Always have the previous deployment ID ready for rollback.
+- 2026-07-26: `api.workers.cloudflare.com` (the asset-upload host) returned persistent HTTP 522s for 2+ days across sessions — even `GET /` 522s, while `api.cloudflare.com` works fine and the status page shows no Workers incident. If the upload step 522s, don't burn tokens on tight retry loops: schedule a retry for later (e.g., cron reminder) and do other work meanwhile. The upload-session JWT expires 1 hour after issuance — mint a fresh one each retry round.
 
 ### Deployment Checklist
 

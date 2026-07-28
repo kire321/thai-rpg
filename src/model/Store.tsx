@@ -9,7 +9,7 @@ import type { Time, Env } from '../types';
 // Build-time version constant injected by Vite
 declare const __APP_VERSION__: string;
 
-const DEFAULT_CMS_BASE = 'https://ipozfyeyt26ay.kimi.page';
+const DEFAULT_CMS_BASE = '/thai-rpg-content'; // durable same-origin CMS (GitHub Pages project site); override in settings
 
 // Time interface
 const time: Time = {
@@ -624,7 +624,7 @@ export class Store extends Component<{}, StoreState> {
 
     // Fallback to local file (bundled with app)
     try {
-      const response = await fetch(`/${filename}`);
+      const response = await fetch(`${import.meta.env.BASE_URL}${filename}`);
       if (response.ok) {
         const data = await response.json();
         console.log(`[CMS] ${filename} using local file`);

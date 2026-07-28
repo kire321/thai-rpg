@@ -1,15 +1,15 @@
 // Service Worker for Thai RPG PWA
-// BUILD_VERSION: 2026-07-19-02 — Vary-proof caching: strip Vary on write, ignoreVary on read
-const CACHE_NAME = 'thai-rpg-2026-07-19-02';
+// BUILD_VERSION: 2026-07-28-02 — durable GitHub Pages hosting: relative precache paths + same-origin CMS
+const CACHE_NAME = 'thai-rpg-2026-07-28-02';
 const CONTENT_CACHE_NAME = 'thai-rpg-content-v1';
 
 // Assets to cache on install. Each is cached INDIVIDUALLY so one failure
 // doesn't block the others. Missing files are skipped gracefully.
 const STATIC_ASSETS = [
-  '/',
-  '/index.html',
-  '/manifest.json',
-  '/icon-512x512.png',
+  './',
+  'index.html',
+  'manifest.json',
+  'icon-512x512.png',
 ];
 
 // In-memory stats for diagnostics (reset on SW restart)

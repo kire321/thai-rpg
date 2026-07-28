@@ -7,8 +7,8 @@
     <meta name="theme-color" content="#f1f5f9" media="(prefers-color-scheme: light)" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-    <link rel="manifest" href="/manifest.json" />
-    <link rel="apple-touch-icon" href="/icon-512x512.png" />
+    <link rel="manifest" href="./manifest.json" />
+    <link rel="apple-touch-icon" href="./icon-512x512.png" />
     <title>Thai RPG</title>
     <style>
       /* Prevent white flash before React mounts */
@@ -45,7 +45,7 @@
       // Register service worker with cache-busting to force update on new deploys
       if ('serviceWorker' in navigator) {
         window.addEventListener('load', () => {
-          const swUrl = '/sw.js?v=' + new Date().toISOString().slice(0,10);
+          const swUrl = 'sw.js?v=' + new Date().toISOString().slice(0,10);
           navigator.serviceWorker.register(swUrl, { updateViaCache: 'none' })
             .then((registration) => {
               console.log('[PWA] Service Worker registered:', registration.scope);

@@ -9,7 +9,7 @@ import type { Time, Env } from '../types';
 // Build-time version constant injected by Vite
 declare const __APP_VERSION__: string;
 
-const DEFAULT_CMS_BASE = '/thai-rpg-content'; // durable same-origin CMS (GitHub Pages project site); override in settings
+const DEFAULT_CMS_BASE = '/cms'; // durable same-origin CMS mirror (GitHub Pages /cms folder — NOTE: '/thai-rpg-content' is shadowed by the project-site path of the repo with that name; never use repo-named paths); override in settings
 
 // Time interface
 const time: Time = {

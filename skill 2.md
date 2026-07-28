@@ -33,6 +33,7 @@ Two ways to access GitHub, in order of preference:
 
 1. **User-provided fine-grained PAT via plain `git` over HTTPS (preferred when available)**: use `https://x-access-token:<PAT>@github.com/kire321/thai-rpg.git` in one-off `git clone`/`fetch`/`push` commands. Advantages over the MCP plugin: works when the MCP server fails to connect (it has); pushes files straight from local disk — the MCP `create_or_update_file` requires retyping entire file contents into tool parameters, which is slow and error-prone for large files like this skill file; keeps local git in sync so `git checkout` is safe. **SECURITY: never save the PAT in git config, never write it to any file, never commit or publish it anywhere — use it only inline in one-off commands, and scrub it from the remote URL afterwards (`git remote set-url origin https://github.com/kire321/thai-rpg.git`).**
 2. **GitHub MCP plugin**: fine for browsing, reads, and small file updates when connected. It commits without touching local git — after any MCP push, the local repo is stale; re-sync (`git fetch` + `git reset --hard`) before any `git checkout`, or tracked files silently revert to old commits (this once broke a build by reverting `src/types/index.ts`).
+3. **GitHub REST API fallback (2026-07-28)**: shell `git clone`/`push` to github.com is flaky from the sandbox (HTTP/2 framing errors, timeouts); `api.github.com` REST is reliable — tarball: `https://codeload.github.com/kire321/thai-rpg/tar.gz/refs/heads/master`; file updates: `PUT /repos/kire321/thai-rpg/contents/{path}` (base64 content, needs current blob sha). NOTE: the fine-grained PAT gets 403 creating files under `.github/workflows/` (needs Actions: write permission) — this blocks the GitHub-Actions upload-relay trick unless the user upgrades the PAT.
 
 ## Writing Your Reply
 
@@ -42,6 +43,8 @@ When you reply, don't claim to have completed the user's objective. Instead:
 * [if you think the task isn't finished yet] ask the user for information to help you complete the task
 * [if you think the task is finished] ask the user if their objective was completed (briefly restate the objective from the prompt to avoid referring to "your objective" in abstract terms)
 * suggest further actions you could do that might help the user's objective
+
+**2026-07-28 correction**: the Vite app lives at the REPO ROOT (`package.json`, `vite.config.ts`, `src/`, `public/`) — there is no `app/` folder. Controller tests: `node src/test/test.mjs` (44 tests, no browser). Playwright offline tests: `src/test/test-*.mjs` (need cms-mirror.py harness). The structure below is aspirational/outdated.
 
 ## Directory Structure
 
@@ -370,7 +373,19 @@ export default {
 - Uploading assets via the Workers assets-upload-session and referencing them in a Pages deployment manifest serves 500s — Pages cannot see the Workers asset store. Only `_worker.js` (the proxy) works this way because Pages Functions load it from that store.
 - `PUT`ing a version directly to the backing worker `pages-worker--16090577-production` succeeds but receives no `pages.dev` traffic — Pages pins traffic to its canonical Pages deployment.
 - Creating ANY Pages deployment makes it live instantly, including a broken one. Always have the previous deployment ID ready for rollback.
+- 2026-07-28 UPDATE: `api.workers.cloudflare.com` STILL 522s on every path/port — now confirmed from 5 independent networks (sandbox, web-fetch tool, codetabs proxy, allorigins EU, and a Cloudflare-Worker-based proxy which timed out entirely), so this IS Cloudflare-side, not our egress. Verified dead ends, do not retry: `--resolve` to other Cloudflare anycast IPs → 403/1034 (edge IP restricted, zones pinned to anycast ranges); the same upload path on `api.cloudflare.com` → 401 (cfwau_ JWT rejected there); `/pages/assets/check-missing` + `/pages/assets/upload` with the real account API token → 8000013 (they only accept the Pages upload-token JWT, which is itself rejected — that whole flow is dead); `PUT /workers/scripts/*` → 10405 for this auth scheme; the account has NO workers.dev subdomain, so no relay Worker can be stood up. Only remaining paths: retry until Cloudflare recovers (cron), relay the upload from another network you control (e.g. GitHub Actions — needs a PAT with Actions: write, see STATE.md in the sandbox), or the user runs the upload curl from their own machine.
 - 2026-07-26: `api.workers.cloudflare.com` (the asset-upload host) returned persistent HTTP 522s for 2+ days across sessions — even `GET /` 522s, while `api.cloudflare.com` works fine and the status page shows no Workers incident. If the upload step 522s, don't burn tokens on tight retry loops: schedule a retry for later (e.g., cron reminder) and do other work meanwhile. The upload-session JWT expires 1 hour after issuance — mint a fresh one each retry round.
+
+### In-flight deploy (2026-07-28) — READ FIRST
+
+A complete rebuild is ready but NOT yet live:
+
+- website_version_manager version **9e43e10** ("Thai RPG offline-image fix rebuild", type static): master code (offline-image fixes) + bundled fallbacks overlaid from the live site (`episodes.json` 35KB, `vocab_items.json` 75KB, `icon-512x512.png` 940KB) + `CACHE_NAME` `thai-rpg-2026-07-28-01`. `node src/test/test.mjs`: 44/44 pass. **IMPORTANT: those 3 files are NOT in git** — master's `public/` has only tiny fixtures and an EMPTY `vocab_items.json`. Overlay procedure: download them from `https://thai-rpg.pages.dev/{episodes.json,vocab_items.json,icon-512x512.png}` into `public/` before building.
+- The kimi.page deploy `y4um3s6faazh4.kimi.page` (previous agent) is INCOMPLETE — `/episodes.json` and `/icon-512x512.png` return 404 there (built from git `public/` only). Do NOT point the proxy at it.
+- Missing: the `*.kimi.page` preview URL of version 9e43e10 (visible only on the frontend version card — ask the user).
+- Blocked: `api.workers.cloudflare.com` 522 (see pitfalls). Cron retries every 2h; runbook + `_worker.js` + `worker.b64` + ready-to-push Actions workflow in `/mnt/agents/output/deploy/STATE.md`.
+- If a bad deployment ever goes live, roll back to deployment `bdb9ff79-4f62-4c10-bc14-89ef093f6c88` (live as of 2026-07-28).
+- When deployed: delete the cron job, delete this section, delete the GitHub branch `relay-upload`.
 
 ### Deployment Checklist
 

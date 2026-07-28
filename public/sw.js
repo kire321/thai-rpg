@@ -1,5 +1,5 @@
 // Service Worker for Thai RPG PWA
-// BUILD_VERSION: 2026-07-28-02 — durable GitHub Pages hosting: CMS mirror at /cms (repo-named paths are shadowed on user Pages sites)
+// BUILD_VERSION: 2026-07-28-03 — durable GitHub Pages hosting: CMS mirror at /cms (repo-named paths are shadowed on user Pages sites)
 const CACHE_NAME = 'thai-rpg-2026-07-28-03';
 const CONTENT_CACHE_NAME = 'thai-rpg-content-v1';
 

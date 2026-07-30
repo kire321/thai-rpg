@@ -381,7 +381,7 @@ export default {
 Deployment no longer depends on any Kimi agent instance:
 
 - **App**: `https://kire321.github.io/` from repo `kire321/kire321.github.io` (master branch, **legacy branch-based Pages** — redeploys automatically on every push to master; no Pages API needed). Old Jekyll blog archived on branch `blog-archive`.
-- **CMS**: `https://kire321.github.io/cms/` — a mirror of `kire321/thai-rpg-content` `public/`, assembled by `.github/workflows/deploy-app.yml` in the root repo (dispatch it via PAT `POST /repos/kire321/kire321.github.io/actions/workflows/deploy-app.yml/dispatches {"ref":"master"}`, or wait for its daily 04:23 UTC run). It builds `thai-rpg@master`, copies CMS `public/` into `/cms`, commits to master. GITHUB_TOKEN only, no secrets.
+- **CMS**: `https://kire321.github.io/cms/` — a mirror of `kire321/thai-rpg-content` `public/` (currently the **`main`** branch = 510 episodes; `master` = 340 episodes + newer Fireworks quality fixes and the CMS skill file `SKILL-CMS.md` — canonical branch is an OPEN QUESTION for the user, see SKILL-CMS.md), assembled by `.github/workflows/deploy-app.yml` in the root repo (dispatch it via PAT `POST /repos/kire321/kire321.github.io/actions/workflows/deploy-app.yml/dispatches {"ref":"master"}`, or wait for its daily 04:23 UTC run). It builds `thai-rpg@master`, copies CMS `public/` into `/cms`, commits to master. GITHUB_TOKEN only, no secrets.
 - **App code**: `DEFAULT_CMS_BASE='/cms'` (same-origin; SW scope `/` intercepts CMS + images so offline images work). CACHE_NAME `thai-rpg-2026-07-28-03`.
 - **Deploy procedure now**: push code to `thai-rpg` master (TDD as usual) -> dispatch the publisher workflow -> verify `https://kire321.github.io/sw.js` and `/cms/episodes.json`.
 

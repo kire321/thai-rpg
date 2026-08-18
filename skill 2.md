@@ -44,7 +44,14 @@ When you reply, don't claim to have completed the user's objective. Instead:
 * [if you think the task is finished] ask the user if their objective was completed (briefly restate the objective from the prompt to avoid referring to "your objective" in abstract terms)
 * suggest further actions you could do that might help the user's objective
 
-**2026-07-28 correction**: the Vite app lives at the REPO ROOT (`package.json`, `vite.config.ts`, `src/`, `public/`) — there is no `app/` folder. Controller tests: `node src/test/test.mjs` (44 tests, no browser). Playwright offline tests: `src/test/test-*.mjs` (need cms-mirror.py harness). The structure below is aspirational/outdated.
+**2026-07-28 correction**: the Vite app lives at the REPO ROOT (`package.json`, `vite.config.ts`, `src/`, `public/`) — there is no `app/` folder. Controller tests: `node src/test/test.mjs` (48 tests, no browser). Playwright offline tests: `src/test/test-*.mjs` (need cms-mirror.py harness). The structure below is aspirational/outdated.
+
+**2026-08-18 — segments JSON format merged from staging**: the `staging` branch's only useful feature was the "segments" episode format; everything else in the master↔staging diff was older/obsolete (staging had old SM-2 intervals, old episode-selection tiebreak, old image prefetch, kimi.page CMS base — do NOT resurrect any of it). Merged into master by hand-port (no git merge — the branches share no recent history):
+
+- **Segments format**: an act may have `segments: [...]` instead of `lines_before/tag/lines_after`. Segments are `{type:'narrative', lines:[...]}` and `{type:'tag', tag:'tag_xxx'}` interleaved. Each tag segment yields one **virtual act**: its `lines_before` = narrative since the previous tag, `lines_after` = narrative until the next tag; only the LAST virtual act carries the act's `decision`. An act may also have `tags: string[]` (multi-tag, flat format).
+- **Controller** (`src/controller/controller.js`): `getVirtualActCount` / `getTotalVirtualActs` / `getVirtualAct` / `getActAtIndex` / `getActTags` (all exported). `getCurrentAct` resolves through `getActAtIndex`, so `state.currentActIndex` is a VIRTUAL act index. `onTapNextLine` skips the choice phase for virtual acts with no decision (advances straight to the next virtual act); episode completion uses `getTotalVirtualActs`, not `episode.acts.length`. Quiz-card selection and the overpressure skip check collect vocab from ALL of an act's tags via `getActTags`.
+- **Store** (`normalizeAct`): does NOT expand segments (controller does it on the fly — avoids double-normalization bugs with saved state), but DOES normalize `stage_directions` inside segment narrative lines.
+- Tests: 4 segment tests at the bottom of `src/test/test.mjs` (search "SEGMENTED EPISODES").
 
 ## Directory Structure
 

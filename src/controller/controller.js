@@ -131,10 +131,99 @@ function getCurrentEpisode(state) {
   return state.episodes.find(e => e.id === state.currentEpisodeId) || null;
 }
 
+// How many virtual acts does a logical act produce?
+// Flat acts → 1. Segmented acts → one per tag segment.
+function getVirtualActCount(act) {
+  if (!act || !act.segments || !Array.isArray(act.segments)) return 1;
+  const tagCount = act.segments.filter(s => s.type === 'tag' && s.tag).length;
+  return tagCount > 0 ? tagCount : 1;
+}
+
+// Total virtual acts across all logical acts in an episode.
+function getTotalVirtualActs(episode) {
+  if (!episode || !episode.acts) return 0;
+  return episode.acts.reduce((sum, act) => sum + getVirtualActCount(act), 0);
+}
+
+// Compute the vIndex-th virtual act from a segmented logical act.
+// For flat acts, returns the act itself (vIndex must be 0).
+function getVirtualAct(act, vIndex) {
+  if (!act) return null;
+  // Flat act (old format)
+  if (!act.segments || !Array.isArray(act.segments)) {
+    return vIndex === 0 ? act : null;
+  }
+
+  const tagSegs = act.segments.filter(s => s.type === 'tag' && s.tag);
+  if (vIndex >= tagSegs.length) return null;
+
+  const thisTag = tagSegs[vIndex];
+  const thisIdx = act.segments.indexOf(thisTag);
+  const prevIdx = vIndex > 0 ? act.segments.indexOf(tagSegs[vIndex - 1]) : -1;
+  const nextIdx = vIndex + 1 < tagSegs.length ? act.segments.indexOf(tagSegs[vIndex + 1]) : act.segments.length;
+
+  // lines_before: narrative segments between previous tag (or start) and this tag
+  const linesBefore = [];
+  for (let i = prevIdx + 1; i < thisIdx; i++) {
+    const seg = act.segments[i];
+    if (seg.type === 'narrative' && Array.isArray(seg.lines)) {
+      linesBefore.push(...seg.lines.map(normalizeLine));
+    }
+  }
+
+  // lines_after: narrative segments between this tag and next tag (or end)
+  const linesAfter = [];
+  for (let i = thisIdx + 1; i < nextIdx; i++) {
+    const seg = act.segments[i];
+    if (seg.type === 'narrative' && Array.isArray(seg.lines)) {
+      linesAfter.push(...seg.lines.map(normalizeLine));
+    }
+  }
+
+  const isLastVirtual = vIndex === tagSegs.length - 1;
+
+  return {
+    ...act,
+    lines_before: linesBefore,
+    tag: thisTag.tag,
+    lines_after: linesAfter,
+    decision: isLastVirtual ? act.decision : undefined,
+  };
+}
+
+// Get the virtual act at a global virtual index within an episode.
+function getActAtIndex(episode, globalVIndex) {
+  if (!episode || !episode.acts) return null;
+  let remaining = globalVIndex;
+  for (const act of episode.acts) {
+    const count = getVirtualActCount(act);
+    if (remaining < count) {
+      return getVirtualAct(act, remaining);
+    }
+    remaining -= count;
+  }
+  return null;
+}
+
 function getCurrentAct(state) {
   const episode = getCurrentEpisode(state);
   if (!episode) return null;
-  return episode.acts[state.currentActIndex || 0] || null;
+  return getActAtIndex(episode, state.currentActIndex || 0);
+}
+
+// Support acts with multiple tags (act.tags: string[]) or single tag (act.tag: string).
+// Returns an array of tag strings in both cases. Backward-compatible with old data.
+function getActTags(act) {
+  if (!act) return [];
+  if (Array.isArray(act.tags)) return act.tags;
+  if (act.tag) return [act.tag];
+  // Extract tags from segmented acts (new CMS format)
+  if (act.segments && Array.isArray(act.segments)) {
+    return act.segments
+      .filter(s => s.type === 'tag' && s.tag)
+      .map(s => s.tag);
+  }
+  return [];
 }
 
 // CMS data quality: some episodes have dialogue="[None]" with the real
@@ -213,7 +302,11 @@ function countDueCardsInEpisode(episode, state, env) {
   let dueCount = 0;
 
   for (const act of episode.acts || []) {
-    const tagVocabIds = tags[act.tag] || [];
+    const actTags = getActTags(act);
+    const tagVocabIds = [];
+    for (const tag of actTags) {
+      tagVocabIds.push(...(tags[tag] || []));
+    }
     for (const card of allCards) {
       if (!tagVocabIds.includes(card.vocabId)) continue;
       if (seenCardIds.has(card.id)) continue;
@@ -370,13 +463,18 @@ function getNextEpisodeInfo(state, env) {
   const nextEpisode = getNextEpisode(simulatedState, env);
   if (!nextEpisode) return null;
 
+  const totalActs = getTotalVirtualActs(nextEpisode);
+
   return {
     episodeId: nextEpisode.id,
     title: nextEpisode.title || nextEpisode.id,
-    acts: (nextEpisode.acts || []).map((act, i) => ({
-      actIndex: i,
-      tag: act.tag,
-    })),
+    acts: Array.from({ length: totalActs }, (_, i) => {
+      const va = getActAtIndex(nextEpisode, i);
+      return {
+        actIndex: i,
+        tag: va?.tag || '(no tag)',
+      };
+    }),
   };
 }
 
@@ -575,7 +673,13 @@ function getProps(state, env) {
 
     // Diagnostic: act tag + due date displayed on quiz card
     // Look up human-readable tag name from tagMeta, fall back to raw tag ID
-    currentActTag: (state.tagMeta?.[currentAct?.tag]?.name) || currentAct?.tag || null,
+    // Look up human-readable tag names from tagMeta, fall back to raw tag IDs
+    // Supports multiple tags per act (joined with +)
+    currentActTag: (() => {
+      const actTags = getActTags(currentAct);
+      if (actTags.length === 0) return null;
+      return actTags.map(tag => state.tagMeta?.[tag]?.name || tag).join(' + ');
+    })(),
     quizCardDueDate: quizCard
       ? formatDueDate(
           getCardDueDate(quizCard, state.cardStats || {}, state.againQueue || []),
@@ -601,23 +705,29 @@ function getProps(state, env) {
 
 function getQuizCardForTag(state, env) {
   const act = getCurrentAct(state);
-  if (!act || !act.tag) return getCurrentCard(state, env);
-  
+  const actTags = getActTags(act);
+  if (!act || actTags.length === 0) return getCurrentCard(state, env);
+
   const cards = state.cards || [];
   const stats = state.cardStats || {};
   const today = getEffectiveDay(env, state.dateshift || 0);
-  const tagVocabIds = (state.tags || {})[act.tag] || [];
+  // Collect vocab IDs from ALL tags in this act (multi-tag support)
+  const allTagVocabIds = [];
+  for (const tag of actTags) {
+    allTagVocabIds.push(...((state.tags || {})[tag] || []));
+  }
+  const tagVocabIdsSet = new Set(allTagVocabIds);
   const againQueue = state.againQueue || [];
   const againDelayCounter = state.againDelayCounter || 0;
-  
+
   // Collect vocabIds that are "locked" because their card is in the againQueue
   const lockedVocabIds = new Set();
   for (const againCardId of againQueue) {
     const againCard = cards.find(c => c.id === againCardId);
     if (againCard) lockedVocabIds.add(againCard.vocabId);
   }
-  
-  const tagCards = cards.filter(c => tagVocabIds.includes(c.vocabId));
+
+  const tagCards = cards.filter(c => tagVocabIdsSet.has(c.vocabId));
   if (tagCards.length === 0) return getCurrentCard(state, env);
   
   // AGAIN cards always come first in episode quizzes.
@@ -782,18 +892,22 @@ const Handlers = {
       }
       // Lines before done → vocab review (or skip if overpressure)
       // OVERPRESSURE VALVE: When Due > New, only review due cards.
-      // If this act's tag has no due cards, skip the quiz with a toast.
+      // If this act's tags have no due cards, skip the quiz with a toast.
       const counters = calculateCounters(state, env);
       const isOverpressure = counters.due > counters.new;
       if (isOverpressure) {
-        const actTag = act.tag;
-        const tagVocabIds = (state.tags || {})[actTag] || [];
+        const actTags = getActTags(act);
+        const allTagVocabIds = [];
+        for (const tag of actTags) {
+          allTagVocabIds.push(...((state.tags || {})[tag] || []));
+        }
+        const tagVocabIdsSet = new Set(allTagVocabIds);
         const stats = state.cardStats || {};
         const againQueue = state.againQueue || [];
         const today = getEffectiveDay(env, state.dateshift || 0);
         let hasDueCardsForTag = false;
         for (const card of state.cards || []) {
-          if (!tagVocabIds.includes(card.vocabId)) continue;
+          if (!tagVocabIdsSet.has(card.vocabId)) continue;
           const s = getCardStats(card, stats);
           if (againQueue.includes(card.id) || (s && s.lastReviewed !== null && (s.lastReviewed + (s.interval || 0)) <= today)) {
             hasDueCardsForTag = true;
@@ -825,8 +939,33 @@ const Handlers = {
       if (index < act.lines_after.length) {
         return { currentLineIndex: index };
       }
-      // Lines after done → choice
-      return { actPhase: 'choice', currentLineIndex: 0 };
+      // Lines after done → choice (if this act has one) or next act
+      if (act.decision && act.decision.choices && act.decision.choices.length > 0) {
+        return { actPhase: 'choice', currentLineIndex: 0 };
+      }
+      // Virtual act with no decision (middle act from segmented normalization):
+      // advance to next act without incrementing play count.
+      const nextVirtualIndex = (state.currentActIndex || 0) + 1;
+      const currentEpisode = getCurrentEpisode(state);
+      if (currentEpisode && nextVirtualIndex < getTotalVirtualActs(currentEpisode)) {
+        return {
+          currentActIndex: nextVirtualIndex,
+          currentLineIndex: 0,
+          actPhase: 'lines_before',
+          showingAnswer: false,
+        };
+      }
+      // Last act with no decision — episode complete
+      if (!state.episodesPlayedToday?.includes(state.currentEpisodeId)) {
+        state.episodesPlayedToday?.push(state.currentEpisodeId);
+      }
+      return {
+        currentView: 'welcome',
+        currentActIndex: nextVirtualIndex,
+        currentLineIndex: 0,
+        actPhase: 'lines_before',
+        showingAnswer: false,
+      };
     }
     
     return {};
@@ -886,9 +1025,10 @@ const Handlers = {
  // Mark as played today when episode completes (last act)
     const episode = getCurrentEpisode(state);
     const nextActIndex = (state.currentActIndex || 0) + 1;
+    const totalVirtualActs = getTotalVirtualActs(episode);
 
-    if (episode && nextActIndex < episode.acts.length) {
-      // More acts — go to next act (not fully played yet)
+    if (episode && nextActIndex < totalVirtualActs) {
+      // More virtual acts — go to next act (not fully played yet)
       return {
         currentActIndex: nextActIndex,
         currentLineIndex: 0,
@@ -1077,4 +1217,4 @@ const Handlers = {
   }),
 };
 
-export { getProps, Handlers, sm2Schedule, generateCards, shuffleArray, mergeStats, getMostOverdueCardInfo, getNextEpisodeInfo, formatDueDate, getCardDueDate, getNextEpisode, getQuizCardForTag, countDueCardsInEpisode, normalizeLine };
+export { getProps, Handlers, sm2Schedule, generateCards, shuffleArray, mergeStats, getMostOverdueCardInfo, getNextEpisodeInfo, formatDueDate, getCardDueDate, getNextEpisode, getQuizCardForTag, countDueCardsInEpisode, normalizeLine, getActTags, getVirtualAct, getVirtualActCount, getTotalVirtualActs, getActAtIndex };

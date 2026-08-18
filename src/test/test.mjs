@@ -1,7 +1,7 @@
 // test.mjs - Comprehensive test suite for Thai RPG SM-2 Spaced Repetition
 // Tests for controller.js - ESM, no compilation needed
 
-import { getProps, Handlers, sm2Schedule } from '../controller/controller.js';
+import { getProps, Handlers, sm2Schedule, countDueCardsInEpisode } from '../controller/controller.js';
 
 // ============ TEST ENVIRONMENT ============
 
@@ -647,9 +647,114 @@ function isThaiText(text) {
   return /[\u0E00-\u0E7F]/.test(text);
 }
 
+// ============ SEGMENTED EPISODES (segments JSON format) ============
+
+// A segmented act: narrative and tag segments interleaved. Each tag segment
+// becomes one "virtual act": lines_before = narrative since previous tag,
+// lines_after = narrative until next tag; decision only on the last one.
+const segmentedEpisode = {
+  id: 'ep_seg',
+  title: 'Segmented Episode',
+  acts: [
+    {
+      id: 'act_1',
+      title: 'Segmented Act',
+      segments: [
+        { type: 'narrative', lines: [
+          { character: 'char_narrator', dialogue: 'Opening line.', stage_directions: [] },
+        ] },
+        { type: 'tag', tag: 'tag_091' },
+        { type: 'narrative', lines: [
+          { character: 'char_narrator', dialogue: 'Middle line.', stage_directions: [] },
+        ] },
+        { type: 'tag', tag: 'tag_402' },
+        { type: 'narrative', lines: [
+          { character: 'char_narrator', dialogue: 'Closing line.', stage_directions: [] },
+        ] },
+      ],
+      decision: {
+        line: { character: 'char_narrator', dialogue: 'What do you do?', stage_directions: [] },
+        choices: [
+          { text: 'Choice A', pass_outcome: { line: { dialogue: 'Pass.' } }, fail_outcome: { line: { dialogue: 'Fail.' } } },
+        ],
+      },
+    },
+  ],
+};
+
+function stateWithSegmentedEpisode(extra = {}) {
+  return {
+    ...stateWithContent(),
+    episodes: [segmentedEpisode],
+    currentEpisodeId: 'ep_seg',
+    currentView: 'episode',
+    currentActIndex: 0,
+    currentLineIndex: 0,
+    actPhase: 'lines_before',
+    ...extra,
+  };
+}
+
+class GivenSegmentedAct_WhenViewingFirstVirtualAct_ThenLinesBeforeTagShown extends TestCase {
+  run() {
+    const state = stateWithSegmentedEpisode();
+    const props = getProps(state, testEnv);
+    assertEqual(props.currentLine?.dialogue, 'Opening line.', 'First virtual act shows pre-tag narrative');
+  }
+}
+
+class GivenSegmentedAct_WhenAdvancingPastFirstQuiz_ThenSecondVirtualActStarts extends TestCase {
+  run() {
+    // Finish lines_before of virtual act 0 (1 line) → vocab_review phase
+    let state = stateWithSegmentedEpisode({ currentLineIndex: 1 });
+    let update = Handlers.onTapNextLine(state, testEnv);
+    assertEqual(update.actPhase, 'vocab_review', 'After lines_before comes vocab review');
+
+    // Rate the quiz card, then advance through lines_after (1 line)
+    state = { ...state, ...update };
+    const cardId = state.vocabReviewCardId;
+    update = Handlers.onRateCard(state, testEnv, cardId, 'good');
+    state = { ...state, ...update, actPhase: 'lines_after', currentLineIndex: 1 };
+    update = Handlers.onTapNextLine(state, testEnv);
+    // Virtual act 0 has no decision → advance straight to virtual act 1
+    assertEqual(update.currentActIndex, 1, 'Advanced to second virtual act');
+    assertEqual(update.actPhase, 'lines_before', 'Second virtual act starts at lines_before');
+    const props = getProps({ ...state, ...update }, testEnv);
+    assertEqual(props.currentLine?.dialogue, 'Middle line.', 'Second virtual act shows mid narrative');
+  }
+}
+
+class GivenSegmentedAct_WhenReachingLastVirtualAct_ThenDecisionShown extends TestCase {
+  run() {
+    // Virtual act 1 (last): skip ahead to end of its lines_after
+    const state = stateWithSegmentedEpisode({ currentActIndex: 1, actPhase: 'lines_after', currentLineIndex: 1 });
+    const update = Handlers.onTapNextLine(state, testEnv);
+    assertEqual(update.actPhase, 'choice', 'Last virtual act ends with the decision');
+  }
+}
+
+class GivenSegmentedEpisode_WhenCountingDueCards_ThenAllSegmentTagsCounted extends TestCase {
+  run() {
+    const state = stateWithContent({
+      tags: { tag_091: ['402-1.'], tag_402: ['402-2.'] },
+      cardStats: {
+        'card-402-1.-thai-eng': { repetitions: 2, interval: 1, ef: 2.5, lastReviewed: 19700 },
+        'card-402-2.-thai-eng': { repetitions: 2, interval: 1, ef: 2.5, lastReviewed: 19700 },
+      },
+    });
+    const count = countDueCardsInEpisode(segmentedEpisode, state, testEnv);
+    assert(count >= 2, `Expected due cards from both segment tags, got ${count}`);
+  }
+}
+
 // ============ TEST RUNNER ============
 
 const allTests = [
+  // Segmented episodes
+  GivenSegmentedAct_WhenViewingFirstVirtualAct_ThenLinesBeforeTagShown,
+  GivenSegmentedAct_WhenAdvancingPastFirstQuiz_ThenSecondVirtualActStarts,
+  GivenSegmentedAct_WhenReachingLastVirtualAct_ThenDecisionShown,
+  GivenSegmentedEpisode_WhenCountingDueCards_ThenAllSegmentTagsCounted,
   // Settings
   WhenITapGearSettingsOpens,
   WhenITapCloseSettingsCloses,

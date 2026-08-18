@@ -89,11 +89,23 @@ function normalizeEpisode(ep: any): any {
   return normalized;
 }
 
+// NOTE: We do NOT expand segmented acts here — the controller handles
+// segments natively via getVirtualAct() / getActAtIndex(). This avoids
+// double-normalization bugs with saved state. We only normalize the lines
+// (stage_directions string → array), including lines inside segments.
 function normalizeAct(act: any): any {
   if (!act) return act;
   const normalized = { ...act };
   normalized.lines_before = (act.lines_before || []).map(normalizeLine);
   normalized.lines_after = (act.lines_after || []).map(normalizeLine);
+  if (Array.isArray(act.segments)) {
+    normalized.segments = act.segments.map((seg: any) => {
+      if (seg && seg.type === 'narrative' && Array.isArray(seg.lines)) {
+        return { ...seg, lines: seg.lines.map(normalizeLine) };
+      }
+      return seg;
+    });
+  }
   if (act.decision) {
     normalized.decision = normalizeDecision(act.decision);
   }

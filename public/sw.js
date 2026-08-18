@@ -1,6 +1,6 @@
 // Service Worker for Thai RPG PWA
-// BUILD_VERSION: 2026-07-28-03 — durable GitHub Pages hosting: CMS mirror at /cms (repo-named paths are shadowed on user Pages sites)
-const CACHE_NAME = 'thai-rpg-2026-07-28-03';
+// BUILD_VERSION: 2026-08-18-01 — segments JSON format support (virtual acts) merged from staging
+const CACHE_NAME = 'thai-rpg-2026-08-18-01';
 const CONTENT_CACHE_NAME = 'thai-rpg-content-v1';
 
 // Assets to cache on install. Each is cached INDIVIDUALLY so one failure

@@ -6,7 +6,7 @@ export interface Content {
   episodes?: any[];
   characters?: Record<string, any>;
   places?: Record<string, any>;
-  subplots?: Record<string, any>;
+  attributes?: Record<string, any>;
   tags?: Record<string, string[]>;
   tagMeta?: Record<string, { name: string; description?: string; picture?: string }>;
 }
@@ -68,10 +68,10 @@ export interface ViewProps {
   _choiceEntropy?: number;
   _choiceThreshold?: number;
   _choiceDifficulty?: number;
-  outcomeSubplot?: string;
+  outcomeAttribute?: string;
   isNarrator: boolean;
-  subplotScores: Record<string, number>;
-  subplots: Record<string, any>;
+  attributeScores: Record<string, number>;
+  attributes: Record<string, any>;
   episodePlays: Record<string, number>;
   againQueue: string[];
   debugMessage?: string;

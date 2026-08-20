@@ -224,7 +224,7 @@ const ErrorScreen = ({ message, onRetry }: { message: string; onRetry: () => voi
           d.epCount = state.episodes?.length ?? 'missing';
           d.hasCharacters = !!state.characters;
           d.hasPlaces = !!state.places;
-          d.hasSubplots = !!state.subplots;
+          d.hasAttributes = !!state.attributes;
           d.hasTags = !!state.tags;
           d.hasCards = Array.isArray(state.cards);
           d.cardCount = state.cards?.length ?? 'missing';
@@ -659,7 +659,7 @@ export class Store extends Component<{}, StoreState> {
       this.fetchFromCMS('episodes.json'),
       this.fetchFromCMS('characters.json'),
       this.fetchFromCMS('places.json'),
-      this.fetchFromCMS('subplots.json'),
+      this.fetchFromCMS('attributes.json'),
       this.fetchFromCMS('tags.json'),
     ]);
 
@@ -673,8 +673,8 @@ export class Store extends Component<{}, StoreState> {
     if (results[2].fromCache) cachedFiles.push('characters');
     let places = results[3].data;
     if (results[3].fromCache) cachedFiles.push('places');
-    let subplots = results[4].data;
-    if (results[4].fromCache) cachedFiles.push('subplots');
+    let attributes = results[4].data;
+    if (results[4].fromCache) cachedFiles.push('attributes');
     let tags = results[5].data;
     if (results[5].fromCache) cachedFiles.push('tags');
 
@@ -684,7 +684,7 @@ export class Store extends Component<{}, StoreState> {
     if (!episodes)   episodes   = this.state.episodes   || existing.episodes;
     if (!characters) characters = this.state.characters || existing.characters;
     if (!places)     places     = this.state.places     || existing.places;
-    if (!subplots)   subplots   = this.state.subplots   || existing.subplots;
+    if (!attributes)   attributes   = this.state.attributes   || existing.attributes;
     if (!tags)       tags       = this.state.tags       || existing.tags;
 
     // If we still have no essential data, check if we already have cached data in state
@@ -716,7 +716,7 @@ export class Store extends Component<{}, StoreState> {
     // Convert array data to maps for controller compatibility
     const charactersMap = arrayToMap(characters);
     const placesMap = arrayToMap(places);
-    const subplotsMap = arrayToMap(subplots);
+    const attributesMap = arrayToMap(attributes);
     const tagsMap = tagsArrayToMap(tags);
     const tagsMeta = tagsArrayToMeta(tags);
 
@@ -727,7 +727,7 @@ export class Store extends Component<{}, StoreState> {
       episodes: normalizedEpisodes,
       characters: charactersMap,
       places: placesMap,
-      subplots: subplotsMap,
+      attributes: attributesMap,
       tags: tagsMap,
       tagMeta: tagsMeta,
     };
@@ -750,7 +750,7 @@ export class Store extends Component<{}, StoreState> {
       episodes: normalizedEpisodes,
       characters: charactersMap,
       places: placesMap,
-      subplots: subplotsMap,
+      attributes: attributesMap,
       tags: tagsMap,
       tagMeta: tagsMeta,
       cards: newCards,
@@ -782,7 +782,7 @@ export class Store extends Component<{}, StoreState> {
       episodes: (episodes as any[]).length,
       characters: Object.keys(charactersMap).length,
       places: Object.keys(placesMap).length,
-      subplots: Object.keys(subplotsMap).length,
+      attributes: Object.keys(attributesMap).length,
       tags: Object.keys(tagsMap).length,
       cachedFiles,
     });
@@ -995,12 +995,12 @@ export class Store extends Component<{}, StoreState> {
     const lightweight = loadState();
 
     // 2. Load content arrays from Cache API
-    const [vocabItems, episodes, characters, places, subplots, tags] = await Promise.all([
+    const [vocabItems, episodes, characters, places, attributes, tags] = await Promise.all([
       this.cacheGet('vocab_items.json'),
       this.cacheGet('episodes.json'),
       this.cacheGet('characters.json'),
       this.cacheGet('places.json'),
-      this.cacheGet('subplots.json'),
+      this.cacheGet('attributes.json'),
       this.cacheGet('tags.json'),
     ]);
 
@@ -1014,7 +1014,7 @@ export class Store extends Component<{}, StoreState> {
     const normalizedEpisodes = episodes.map(normalizeEpisode);
     const charactersMap = arrayToMap(characters);
     const placesMap = arrayToMap(places);
-    const subplotsMap = arrayToMap(subplots);
+    const attributesMap = arrayToMap(attributes);
     const tagsMap = tagsArrayToMap(tags);
     const tagsMeta = tagsArrayToMeta(tags);
 
@@ -1025,7 +1025,7 @@ export class Store extends Component<{}, StoreState> {
       episodes: normalizedEpisodes,
       characters: charactersMap,
       places: placesMap,
-      subplots: subplotsMap,
+      attributes: attributesMap,
       tags: tagsMap,
       tagMeta: tagsMeta,
     };
@@ -1044,7 +1044,7 @@ export class Store extends Component<{}, StoreState> {
       episodes: normalizedEpisodes,
       characters: charactersMap,
       places: placesMap,
-      subplots: subplotsMap,
+      attributes: attributesMap,
       tags: tagsMap,
       tagMeta: tagsMeta,
       cards,
@@ -1062,7 +1062,7 @@ export class Store extends Component<{}, StoreState> {
   // Content is reconstructed from per-file CMS caches on load.
   private saveState() {
     try {
-      const { isLoading, loadError, toast, vocabItems, episodes, characters, places, subplots, tags, cards, ...lightweight } = this.state as any;
+      const { isLoading, loadError, toast, vocabItems, episodes, characters, places, attributes, tags, cards, ...lightweight } = this.state as any;
       const json = JSON.stringify(lightweight);
       localStorage.setItem('thai-rpg-state', json);
       console.log('[Store] State saved:', Math.round(json.length / 1024) + 'KB');
@@ -1074,7 +1074,7 @@ export class Store extends Component<{}, StoreState> {
   componentDidUpdate() {
     // Backup: save lightweight state on any render
     try {
-      const { isLoading, loadError, toast, vocabItems, episodes, characters, places, subplots, tags, cards, ...lightweight } = this.state as any;
+      const { isLoading, loadError, toast, vocabItems, episodes, characters, places, attributes, tags, cards, ...lightweight } = this.state as any;
       localStorage.setItem('thai-rpg-state', JSON.stringify(lightweight));
     } catch (e) {
       // Silent — explicit saveState is the primary path

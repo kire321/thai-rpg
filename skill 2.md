@@ -4,7 +4,7 @@
 
 ## Project Overview
 
-Thai RPG is a **Progressive Web App (PWA)** for learning Thai vocabulary through an interactive RPG adventure. Users read narrative episodes, review vocabulary cards (using SM-2 spaced repetition), and make story choices that affect subplot scores.
+Thai RPG is a **Progressive Web App (PWA)** for learning Thai vocabulary through an interactive RPG adventure. Users read narrative episodes, review vocabulary cards (using SM-2 spaced repetition), and make story choices that affect attribute scores.
 
 **Tech stack**: React 18 + TypeScript + Vite + Tailwind CSS + shadcn/ui
 **Architecture**: MVC — `controller.js` (business logic), `Store.tsx` (state management + data loading), `View.tsx` (UI rendering)
@@ -111,7 +111,7 @@ User action → Store.tsx calls Handlers[event](state, env) → returns state up
   // Episode progress
   episodePlays: { episodeId: playCount },
   episodesPlayedToday: [episodeIds], // Excluded from selection
-  subplotScores: { subplotId: score },
+  attributeScores: { attributeId: score },
 
   // Current session
   currentView: 'welcome' | 'episode',
@@ -158,8 +158,8 @@ User action → Store.tsx calls Handlers[event](state, env) → returns state up
         choices: [
           {
             difficulty: 0,         // 0=easy, 1=medium, 2=hard
-            pass_outcome: { subplot: 'main', delta: 1, line: 'Success!' },
-            fail_outcome: { subplot: 'main', delta: -1, line: 'Failure!' },
+            pass_outcome: { attribute: 'main', delta: 1, line: 'Success!' },
+            fail_outcome: { attribute: 'main', delta: -1, line: 'Failure!' },
           },
           // ...more choices
         ],
@@ -474,6 +474,6 @@ This bug kept "being fixed" and coming back because there were FOUR stacked caus
 * **Episode narrative**: RPG story with acts, choices, consequences
 * **Offline-first**: Works without network via Service Worker + Cache API
 * **Diagnostics**: Due date, act tag, episode selection info visible in UI
-* **Subplot scores**: Choices affect story branches
+* **Attribute scores**: Choices affect story branches
 * **Skill checks**: Choices should have difficulty and risk of failure
 * **PWA**: Installable, works offline, updates via SW

@@ -159,7 +159,7 @@ self.addEventListener('fetch', (event) => {
     url.pathname.includes('content') || url.pathname.includes('episodes') ||
     url.pathname.includes('vocab') || url.pathname.includes('characters') ||
     url.pathname.includes('places') || url.pathname.includes('tags') ||
-    url.pathname.includes('subplots')
+    url.pathname.includes('attributes')
   )) {
     // Normalize: cache under the URL WITHOUT the ?t= cache-buster
     const cleanUrl = url.origin + url.pathname;

@@ -254,10 +254,10 @@ const LineCard: React.FC<{
 
 const ChoiceCard: React.FC<{
   decision: any;
-  subplots: Record<string, any>;
+  attributes: Record<string, any>;
   cmsBaseUrl: string;
   onTapChoice: (index: number) => void;
-}> = ({ decision, subplots, cmsBaseUrl, onTapChoice }) => {
+}> = ({ decision, attributes, cmsBaseUrl, onTapChoice }) => {
   if (!decision) return null;
   return (
     <div className="w-full max-w-md mx-auto">
@@ -266,8 +266,8 @@ const ChoiceCard: React.FC<{
       )}
       <div className="space-y-3 mt-4">
         {decision.choices?.map((choice: any, i: number) => {
-          const outcomeSubplot = choice.pass_outcome?.subplot
-            ? (subplots[choice.pass_outcome.subplot]?.name || choice.pass_outcome.subplot).replace('subplot_', '')
+          const outcomeAttribute = choice.pass_outcome?.attribute
+            ? (attributes[choice.pass_outcome.attribute]?.name || choice.pass_outcome.attribute).replace('attribute_', '')
             : null;
           return (
             <button key={i} onClick={() => onTapChoice(i)}
@@ -282,9 +282,9 @@ const ChoiceCard: React.FC<{
                     {['easy', 'medium', 'hard'][choice.difficulty] || choice.difficulty}
                   </span>
                 )}
-                {outcomeSubplot && (
+                {outcomeAttribute && (
                   <span className="text-[10px] px-2 py-0.5 bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 rounded-full">
-                    {outcomeSubplot}
+                    {outcomeAttribute}
                   </span>
                 )}
               </div>
@@ -395,17 +395,17 @@ const QuizCard: React.FC<{
 // ===================== FOOTER =====================
 
 const Footer: React.FC<{
-  subplotScores: Record<string, number>;
-  subplots: Record<string, any>;
-}> = ({ subplotScores, subplots }) => {
-  const allSubplotIds = Object.keys(subplots);
-  if (allSubplotIds.length === 0) return null;
+  attributeScores: Record<string, number>;
+  attributes: Record<string, any>;
+}> = ({ attributeScores, attributes }) => {
+  const allAttributeIds = Object.keys(attributes);
+  if (allAttributeIds.length === 0) return null;
   return (
     <footer className="fixed bottom-12 left-0 right-0 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-700 z-40">
       <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 px-4 py-2 text-xs">
-        {allSubplotIds.map((id) => {
-          const score = subplotScores[id] || 0;
-          const compactName = (subplots[id]?.name || id).replace(/^subplot_/, '').replace(/^The /, '').replace(/'/g, '');
+        {allAttributeIds.map((id) => {
+          const score = attributeScores[id] || 0;
+          const compactName = (attributes[id]?.name || id).replace(/^attribute_/, '').replace(/^The /, '').replace(/'/g, '');
           return (
             <span key={id} className="text-slate-600 dark:text-slate-400">
               {compactName}:<span className={`ml-0.5 font-bold ${score > 0 ? 'text-green-600 dark:text-green-400' : score < 0 ? 'text-red-600 dark:text-red-400' : 'text-slate-400 dark:text-slate-600'}`}>{score > 0 ? '+' : ''}{score}</span>
@@ -698,8 +698,8 @@ const ViewInner: React.FC<ViewProps> = (props) => {
   const showVocabReview = props.showVocabReview ?? false;
   const currentDecision = props.currentDecision ?? null;
   const actPhase = props.actPhase ?? 'lines_before';
-  const subplotScores = props.subplotScores ?? {};
-  const subplots = props.subplots ?? {};
+  const attributeScores = props.attributeScores ?? {};
+  const attributes = props.attributes ?? {};
   const getHandler = props.getHandler;
   const cmsBaseUrl = props.cmsBaseUrl ?? 'https://q4kgqw3jj72wa.kimi.page';
   const toast = props.toast ?? null;
@@ -713,10 +713,10 @@ const ViewInner: React.FC<ViewProps> = (props) => {
     }
   };
 
-  const hasFooter = Object.keys(subplots).length > 0;
+  const hasFooter = Object.keys(attributes).length > 0;
   const outcomePassed = props.outcomePassed;
   const outcomeDelta = props.outcomeDelta;
-  const outcomeSubplot = props.outcomeSubplot;
+  const outcomeAttribute = props.outcomeAttribute;
 
   return (
     <div className={`min-h-screen bg-slate-100 dark:bg-slate-950 ${hasFooter ? 'pb-20' : ''}`}>
@@ -785,7 +785,7 @@ const ViewInner: React.FC<ViewProps> = (props) => {
             )}
 
             {actPhase === 'choice' && currentDecision && (
-              <ChoiceCard decision={currentDecision} subplots={subplots} cmsBaseUrl={cmsBaseUrl} onTapChoice={(i) => getHandler('onTapChoice')(i)} />
+              <ChoiceCard decision={currentDecision} attributes={attributes} cmsBaseUrl={cmsBaseUrl} onTapChoice={(i) => getHandler('onTapChoice')(i)} />
             )}
 
             {actPhase === 'outcome' && currentLine && (
@@ -793,7 +793,7 @@ const ViewInner: React.FC<ViewProps> = (props) => {
                 {outcomePassed !== undefined && (
                   <div className={`w-full max-w-md mx-auto mb-4 p-4 rounded-xl text-center ${outcomePassed ? 'bg-green-100 dark:bg-green-900/30 border border-green-300 dark:border-green-700' : 'bg-red-100 dark:bg-red-900/30 border border-red-300 dark:border-red-700'}`}>
                     <p className={`text-lg font-bold ${outcomePassed ? 'text-green-700 dark:text-green-300' : 'text-red-700 dark:text-red-300'}`}>{outcomePassed ? '✓ Success!' : '✗ Failed'}</p>
-                    {outcomeSubplot && <p className={`text-sm mt-1 ${outcomePassed ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>{(subplots[outcomeSubplot]?.name || outcomeSubplot).replace('subplot_', '')}: <span className="font-bold ml-1">{outcomeDelta && outcomeDelta > 0 ? '+' : ''}{outcomeDelta || 0}</span></p>}
+                    {outcomeAttribute && <p className={`text-sm mt-1 ${outcomePassed ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>{(attributes[outcomeAttribute]?.name || outcomeAttribute).replace('attribute_', '')}: <span className="font-bold ml-1">{outcomeDelta && outcomeDelta > 0 ? '+' : ''}{outcomeDelta || 0}</span></p>}
                   </div>
                 )}
                 <LineCard line={currentLine} character={null} place={null} isNarrator={true} cmsBaseUrl={cmsBaseUrl} />
@@ -811,7 +811,7 @@ const ViewInner: React.FC<ViewProps> = (props) => {
         )}
       </main>
 
-      <Footer subplotScores={subplotScores} subplots={subplots} />
+      <Footer attributeScores={attributeScores} attributes={attributes} />
 
       {showResetConfirm && (
         <div className="fixed inset-0 z-[60] bg-black/60 flex items-center justify-center p-4">

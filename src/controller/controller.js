@@ -656,7 +656,7 @@ function getProps(state, env) {
     // Episode outcome
     outcomePassed: state.outcomePassed,
     outcomeDelta: state.outcomeDelta,
-    outcomeSubplot: state.outcomeSubplot,
+    outcomeAttribute: state.outcomeAttribute,
 
     // Toast notification
     toast: state.toast || null,
@@ -694,8 +694,8 @@ function getProps(state, env) {
     nextEpisodeInfo: getNextEpisodeInfo(state, env),
 
     // Footer
-    subplotScores: state.subplotScores || {},
-    subplots: state.subplots || {},
+    attributeScores: state.attributeScores || {},
+    attributes: state.attributes || {},
   };
 }
 
@@ -829,9 +829,9 @@ const Handlers = {
     const episodes = env.content.episodes || [];
     const characters = env.content.characters || {};
     const places = env.content.places || {};
-    const subplots = env.content.subplots || {};
+    const attributes = env.content.attributes || {};
     const tags = env.content.tags || {};
-    return { episodes, characters, places, subplots, tags };
+    return { episodes, characters, places, attributes, tags };
   },
 
   onStartEpisode: (state, env) => {
@@ -975,15 +975,15 @@ const Handlers = {
     const act = getCurrentAct(state);
     if (!act || !act.decision || !act.decision.choices[choiceIndex]) return {};
     const choice = act.decision.choices[choiceIndex];
-    // SKILL CHECK: success chance based on choice difficulty + subplot skill.
+    // SKILL CHECK: success chance based on choice difficulty + attribute skill.
     // Base rates: easy=85%, medium=60%, hard=35%.
-    // Subplot score adds up to +15% bonus (capped at 95%).
+    // Attribute score adds up to +15% bonus (capped at 95%).
     let diff = choice.difficulty !== undefined ? choice.difficulty : Math.min(choiceIndex, 2);
     // Guard: diff must be 0, 1, or 2
     if (typeof diff !== 'number' || isNaN(diff) || diff < 0 || diff > 2) diff = 1;
     const baseRates = [0.85, 0.6, 0.35];
-    const subplotKey = choice.pass_outcome?.subplot;
-    const rawScore = subplotKey != null ? (state.subplotScores?.[subplotKey] || 0) : 0;
+    const attributeKey = choice.pass_outcome?.attribute;
+    const rawScore = attributeKey != null ? (state.attributeScores?.[attributeKey] || 0) : 0;
     const skillBonus = Math.min(0.15, rawScore * 0.01);
     const successRate = Math.min(0.95, baseRates[diff] + skillBonus);
     // Use Math.random() for skill check — properly random in browsers.
@@ -993,9 +993,9 @@ const Handlers = {
     const outcome = passed ? choice.pass_outcome : (choice.fail_outcome || choice.pass_outcome);
     if (!outcome) return {};
 
-    // Update subplot score
-    const scores = { ...(state.subplotScores || {}) };
-    scores[outcome.subplot] = (scores[outcome.subplot] || 0) + outcome.delta;
+    // Update attribute score
+    const scores = { ...(state.attributeScores || {}) };
+    scores[outcome.attribute] = (scores[outcome.attribute] || 0) + outcome.delta;
     
     // Extract dialogue from outcome line (CMS stores lines as objects with .dialogue)
     const outcomeText = typeof outcome.line === 'string'
@@ -1006,8 +1006,8 @@ const Handlers = {
       outcomeLine: outcomeText,
       outcomePassed: passed,
       outcomeDelta: outcome.delta,
-      outcomeSubplot: outcome.subplot,
-      subplotScores: scores,
+      outcomeAttribute: outcome.attribute,
+      attributeScores: scores,
       showingAnswer: false,
       _choiceCounter: globalChoiceCounter,
     };
@@ -1053,10 +1053,10 @@ const Handlers = {
     };
   },
 
-  onChoiceOutcome: (state, env, subplotId, delta) => {
-    const scores = { ...(state.subplotScores || {}) };
-    scores[subplotId] = (scores[subplotId] || 0) + delta;
-    return { subplotScores: scores };
+  onChoiceOutcome: (state, env, attributeId, delta) => {
+    const scores = { ...(state.attributeScores || {}) };
+    scores[attributeId] = (scores[attributeId] || 0) + delta;
+    return { attributeScores: scores };
   },
 
   onVocabReviewDone: (state, env) => {

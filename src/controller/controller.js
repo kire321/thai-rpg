@@ -978,7 +978,17 @@ const Handlers = {
     // SKILL CHECK: success chance based on choice difficulty + attribute skill.
     // Base rates: easy=85%, medium=60%, hard=35%.
     // Attribute score adds up to +15% bonus (capped at 95%).
-    let diff = choice.difficulty !== undefined ? choice.difficulty : Math.min(choiceIndex, 2);
+    // CMS sends difficulty as the STRING 'easy'|'medium'|'hard'; older
+    // fixtures used the NUMBER 0|1|2. Accept both, string is canonical.
+    const DIFFICULTY_INDEX = { easy: 0, medium: 1, hard: 2 };
+    let diff;
+    if (typeof choice.difficulty === 'string') {
+      diff = DIFFICULTY_INDEX[choice.difficulty.toLowerCase()];
+    } else if (typeof choice.difficulty === 'number') {
+      diff = choice.difficulty;
+    } else {
+      diff = Math.min(choiceIndex, 2);
+    }
     // Guard: diff must be 0, 1, or 2
     if (typeof diff !== 'number' || isNaN(diff) || diff < 0 || diff > 2) diff = 1;
     const baseRates = [0.85, 0.6, 0.35];

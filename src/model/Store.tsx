@@ -634,18 +634,9 @@ export class Store extends Component<{}, StoreState> {
     const cached = await this.cacheGet(filename);
     if (cached) return { data: cached, fromCache: true };
 
-    // Fallback to local file (bundled with app)
-    try {
-      const response = await fetch(`${import.meta.env.BASE_URL}${filename}`);
-      if (response.ok) {
-        const data = await response.json();
-        console.log(`[CMS] ${filename} using local file`);
-        return { data, fromCache: true };
-      }
-    } catch (e) {
-      console.log(`[CMS] ${filename} local file failed`);
-    }
-
+    // No bundled-JSON fallback: content comes only from the CMS (network)
+    // or the Cache API (offline). Stale bundled fixtures caused silent
+    // content regressions.
     return { data: null, fromCache: true };
   }
 
@@ -677,6 +668,16 @@ export class Store extends Component<{}, StoreState> {
     if (results[4].fromCache) cachedFiles.push('attributes');
     let tags = results[5].data;
     if (results[5].fromCache) cachedFiles.push('tags');
+
+    // IMAGE CACHE INVALIDATION: when any file came FRESH from the CMS, the
+    // content may carry new pictures under OLD URLs (e.g. a regenerated
+    // portrait at the same /characters/<name>.png path). The SW serves
+    // images cache-first and the bulk-cache pass skips already-cached URLs,
+    // so without this the stale bytes would live forever. Bump imageVersion
+    // and force-refresh the pictures (see ensureImagesCached).
+    const freshFromCms = results.some(r => !r.fromCache && r.data);
+    let imageVersion: number = this.state.imageVersion || 0;
+    if (freshFromCms) imageVersion = Date.now();
 
     // For any null results, try falling back to existing state
     const existing = loadState();
@@ -716,6 +717,19 @@ export class Store extends Component<{}, StoreState> {
     // Convert array data to maps for controller compatibility
     const charactersMap = arrayToMap(characters);
     const placesMap = arrayToMap(places);
+
+    // Stamp picture URLs with the content version so (a) the browser
+    // re-renders images whose bytes changed under an unchanged path, and
+    // (b) the offline cache stores them under a fresh URL.
+    if (imageVersion) {
+      for (const map of [charactersMap, placesMap]) {
+        for (const item of Object.values(map) as any[]) {
+          if (item && typeof item.picture === 'string' && item.picture && !item.picture.includes('?v=')) {
+            item.picture = `${item.picture}?v=${imageVersion}`;
+          }
+        }
+      }
+    }
     const attributesMap = arrayToMap(attributes);
     const tagsMap = tagsArrayToMap(tags);
     const tagsMeta = tagsArrayToMeta(tags);
@@ -746,6 +760,7 @@ export class Store extends Component<{}, StoreState> {
     let updates: any = {
       isLoading: false,
       loadError: null,
+      imageVersion,
       vocabItems,
       episodes: normalizedEpisodes,
       characters: charactersMap,
@@ -787,8 +802,10 @@ export class Store extends Component<{}, StoreState> {
       cachedFiles,
     });
 
-    // Prefetch (and repair) all images so the app works fully offline
-    this.ensureImagesCached(charactersMap, placesMap);
+    // Prefetch (and repair) all images so the app works fully offline.
+    // forceRefresh when fresh CMS content arrived: evict old picture entries
+    // (same path, old bytes) before re-caching, so updated portraits appear.
+    this.ensureImagesCached(charactersMap, placesMap, freshFromCms);
   }
 
   // Inline card generation (same logic as controller)
@@ -892,17 +909,39 @@ export class Store extends Component<{}, StoreState> {
     return false;
   }
 
-  private ensureImagesCached(charactersMap?: Record<string, any>, placesMap?: Record<string, any>): Promise<void> {
+  private ensureImagesCached(charactersMap?: Record<string, any>, placesMap?: Record<string, any>, forceRefresh = false): Promise<void> {
     // Coalesce concurrent calls (load + online + visibilitychange can overlap)
     if (this.ensureImagesPromise) return this.ensureImagesPromise;
-    this.ensureImagesPromise = this.doEnsureImagesCached(charactersMap, placesMap)
+    this.ensureImagesPromise = this.doEnsureImagesCached(charactersMap, placesMap, forceRefresh)
       .finally(() => { this.ensureImagesPromise = null; });
     return this.ensureImagesPromise;
   }
 
-  private async doEnsureImagesCached(charactersMap?: Record<string, any>, placesMap?: Record<string, any>): Promise<void> {
+  // Evict every cached entry for the given URLs (any query string) from all
+  // thai-rpg asset caches. Used when fresh CMS content arrives, because the
+  // SW serves images cache-first and would otherwise keep serving old bytes
+  // for a picture whose file was replaced under the same name.
+  private async evictImageCacheEntries(urls: string[]) {
+    try {
+      const names = await caches.keys();
+      for (const name of names) {
+        if (!name.startsWith('thai-rpg') || name.includes('content')) continue;
+        const cache = await caches.open(name);
+        for (const url of urls) {
+          try { await cache.delete(url, { ignoreSearch: true }); } catch { /* ignore */ }
+        }
+      }
+    } catch { /* ignore */ }
+  }
+
+  private async doEnsureImagesCached(charactersMap?: Record<string, any>, placesMap?: Record<string, any>, forceRefresh = false): Promise<void> {
     const urls = this.collectImageUrls(charactersMap, placesMap);
     if (urls.length === 0) return;
+
+    if (forceRefresh && navigator.onLine) {
+      console.log(`[Images] Fresh CMS content — evicting ${urls.length} possibly-stale image entries`);
+      await this.evictImageCacheEntries(urls);
+    }
     this.imageCacheUrls = urls;
 
     // Offline right now? Don't burn retries — we'll run again on 'online'

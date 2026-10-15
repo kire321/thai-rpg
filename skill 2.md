@@ -2,6 +2,14 @@
 
 > **SELF-UPDATE RULE**: Every agent working on this project MUST update this skill file before finishing. Add anything you learned, any user instructions given, any tricky bugs found, and any deployment changes. Think of this file as the project's collective memory — the next agent starts fresh with only this file and the code. Delete outdated info. This rule applies to YOU right now — update this file before you finish your task.
 
+
+**2026-10-15 (content-refresh & scheme-alignment batch)**:
+- **Choice difficulty is a CMS STRING** (`'easy'|'medium'|'hard'`) — NOT a number. `onTapChoice` maps strings to rates {easy:0.85, medium:0.6, hard:0.35} (numbers 0|1|2 still accepted for backward compat); the View badge renders strings directly. Tests: `GivenEasyChoiceString_*`, `GivenHardChoiceString_*`, `GivenNumericDifficulty_*` in test.mjs. When writing new choice code, NEVER index into an array with `choice.difficulty`.
+- **Bundled data JSONs REMOVED**: `public/{episodes,vocab_items,characters,places,tags,attributes}.json` are deleted and the local-file fallback in `Store.fetchFromCMS` is gone. Content now comes ONLY from the CMS (`/cms/*.json`) or the Cache API (`thai-rpg-content-v1`). Root-relative `*.json` fetches 404 by design — the CMS UI must keep fetching `/cms/*.json` (its old pitfall about hitting "the game's bundled fixture" is moot but the absolute-path rule stands).
+- **Image cache invalidation on fresh content** (the "Chronicler still shows the old portrait" bug): the SW serves images cache-first and `CACHE_URLS` skips already-cached URLs, so a regenerated picture at the SAME path stayed stale forever. Fix in Store.tsx: `loadAllContent` detects any file fetched fresh from the CMS → bumps `state.imageVersion` → stamps every picture URL with `?v=<imageVersion>` (forces React to re-render with a new URL) and calls `ensureImagesCached(maps, forceRefresh=true)`, which evicts all same-path cache entries (`cache.delete(url, {ignoreSearch:true})`) before re-caching. Lesson: **any cache-first asset whose bytes can change under an unchanged URL needs versioned URLs + eviction on content refresh.**
+- **Footer**: was `fixed bottom-12` (48px dead gap below it) — now `bottom-0`; container padding `pb-20` → `pb-14`. When adding fixed chrome, pin it flush and pad the scroll container by the chrome's actual height.
+- Deployment section rewritten: GitHub Pages via the `kire321.github.io` publisher workflow is the ONLY deploy path (see SKILL-CMS.md §Deployment). Cloudflare/kimi.page instructions deleted.
+
 ## Project Overview
 
 Thai RPG is a **Progressive Web App (PWA)** for learning Thai vocabulary through an interactive RPG adventure. Users read narrative episodes, review vocabulary cards (using SM-2 spaced repetition), and make story choices that affect attribute scores.
@@ -23,7 +31,7 @@ Thai RPG is a **Progressive Web App (PWA)** for learning Thai vocabulary through
      * specs or user requirements at a medium level of detail: not the one specific bug you fixed in this task, but do include medium-detailed user stories or features that I mentioned
    * delete anything that turned out to be outdated or misleading
    * add anything you learned that would be helpful in the future
-4. Deploy to cloudflare.
+4. Deploy: push to master, dispatch the `kire321.github.io` publisher workflow, verify `https://kire321.github.io/` (see Deployment).
 5. Push your code and changes and the changes to this skill file to github.
 6. Write your reply following the **Writing Your Reply** section below.
 
@@ -62,14 +70,12 @@ app/src/
   view/View.tsx              — ALL UI components (pure, receives props from getProps)
   types/index.ts             — TypeScript type definitions
   components/ui/             — shadcn/ui components (auto-generated, don't modify)
-  data/                      — Bundled fallback data (episodes.json, vocab_items.json, etc.)
 app/public/
   sw.js                      — Service Worker (must bump CACHE_NAME on every deploy)
-  episodes.json              — Episode data (narrative lines, choices, acts, tags)
-  vocab_items.json           — Vocabulary items (Thai word + English translation + tags)
-  characters.json            — Character definitions (name, description, picture)
-  places.json                — Place definitions (name, description, picture)
-  tags.json                  — Tag definitions (tag ID → vocab item IDs)
+  icon-512x512.png, manifest.json — PWA shell assets
+  (NO bundled data JSONs since 2026-10-15 — content comes only from the CMS
+   at DEFAULT_CMS_BASE='/cms' or the Cache API; root-relative data fetches
+   from the CMS UI therefore 404, which is the desired fail-loud behavior)
 test-*.js                    — User journey tests (run with `node test-*.js`)
 ```
 
@@ -268,7 +274,7 @@ for f in test-*.js; do echo "=== $f ==="; node "$f" 2>&1 | tail -3; done
 3. **ALL**: Run ALL test suites to ensure no regressions.
 4. **BUILD**: `npm run build` in `app/` — must succeed.
 5. **PUSH**: Use the GitHub plugin.
-6. **DEPLOY**: Use Cloudflare plugin.
+6. **DEPLOY**: push to master and dispatch the GitHub Pages publisher workflow (see Deployment) — Cloudflare/kimi.page flow is obsolete.
 
 ***
 
@@ -337,78 +343,37 @@ Key function: `countDueCardsInEpisode()` shares code path with diagnostics.
 
 ## Deployment
 
-### Cloudflare Pages (Primary)
+### GitHub Pages (PRIMARY — 2026-07-30, canonical per SKILL-CMS.md)
 
-The project is deployed to Cloudflare Pages as `thai-rpg`.
-**Production URL**: `https://thai-rpg.pages.dev`
+The app is durably deployed at **`https://kire321.github.io/`** from repo `kire321/kire321.github.io` (master branch, legacy branch-based Pages — redeploys automatically on every push; no Pages API, no secrets, no Cloudflare, no kimi.page).
 
-**Deployment method** (verified working — follow this exactly, do NOT try to upload assets to Cloudflare Pages directly):
+**Assembled by**: `.github/workflows/deploy-app.yml` in `kire321/kire321.github.io`. Each run: checks out `kire321/thai-rpg@master` + builds the game, copies `kire321/thai-rpg-content@master/public/` into the site folder `cms/`, builds the CMS editor UI from the content repo into `cms-ui/`, commits everything to master.
 
-The production site is a thin Cloudflare Pages `_worker.js` that proxies every request to a `*.kimi.page` URL hosting the built app. Deploying = deploy the new build to kimi.page, then point the proxy at the new URL.
+**Deploy procedure for frontend changes:**
+1. Bump SW cache version in `public/sw.js` (`CACHE_NAME` + `BUILD_VERSION` comment).
+2. `npm install && npm run build` — zero errors.
+3. Push code to `thai-rpg` master.
+4. Dispatch the publisher:
+   ```
+   curl -X POST -H "Authorization: Bearer <user's fine-grained PAT>" \
+     https://api.github.com/repos/kire321/kire321.github.io/actions/workflows/deploy-app.yml/dispatches \
+     -d '{"ref":"master"}'
+   ```
+   (or wait for the daily 04:23 UTC scheduled run).
+5. Verify with cache-busters (GitHub Pages CDN caches 404s; expect ~1-2 min build lag): `https://kire321.github.io/sw.js?cb=$(date +%s)` shows the new CACHE_NAME; the JS bundle referenced by `index.html` returns 200; `/icon-512x512.png` 200; `/cms/episodes.json` 200.
 
-1. **Bump SW cache version**: Edit `app/public/sw.js` — change `CACHE_NAME` and update `BUILD_VERSION` comment.
-2. **Build**: `cd app && npm install && npm run build` — must succeed with zero errors. Note: the build embeds a timestamp (`__APP_VERSION__`), so the JS bundle filename changes every build.
-3. **Deploy static files**: Use `mshtools-website_version_manager` with `action: "build_version"`, `type: "static"`, `project_dir` = the project root (containing `dist/` after the build). The tool returns a version ID; **the preview URL (`https://<id-or-slug>.kimi.page`) is shown on the frontend version card — you need that exact URL for the next step.** If the tool result shows no URL, get it from the version card before touching Cloudflare; do not guess URL patterns (wildcard `*.kimi.page` hosts return 404 for other tenants).
-4. **Update the Cloudflare Pages proxy** via Cloudflare MCP `execute` (the `/pages/assets/*` upload-token flow and direct worker-version PUTs do NOT work — see pitfalls below):
-   a. Compute the asset hash: `sha256(_worker.js)` as hex, truncated to 32 chars.
-   b. `POST /accounts/{accountId}/workers/scripts/pages-worker--16090577-production/assets-upload-session` with body `{"manifest": {"/_worker.js": {"hash": "<hash32>", "size": <bytes>}}}` → returns a JWT (audience `api.workers.cloudflare.com`).
-   c. Upload the asset **from a local shell** (the MCP execute sandbox blocks egress to `api.workers.cloudflare.com`):
-      `curl -X POST "https://api.workers.cloudflare.com/client/v4/accounts/{accountId}/workers/assets/upload?base64=true" -H "Authorization: Bearer <jwt>" -F "<hash32>=@worker.b64;type=application/javascript;filename=<hash32>"` where `worker.b64` is the base64-encoded `_worker.js`. Retry a few times on HTTP 522.
-   d. `POST /accounts/{accountId}/pages/projects/thai-rpg/deployments` as multipart/form-data with a single field `manifest` = `{"/_worker.js": "<hash32>"}` (JSON, path keys have a leading slash). **The new deployment goes LIVE immediately.**
-   e. Verify `https://thai-rpg.pages.dev`: `sw.js` shows the new `CACHE_NAME`, the bundle path referenced by `index.html` returns 200, `/icon-512x512.png` returns 200. If anything fails, roll back: `POST /accounts/{accountId}/pages/projects/thai-rpg/deployments/{previous-deployment-id}/rollback` (site recovers in ~20s).
-5. **Push code**: Use GitHub MCP to push changes to the `master` branch.
-
-**Proxy `_worker.js`** (only the target URL changes between deploys):
-
-```js
-export default {
-  async fetch(request) {
-    const url = new URL(request.url);
-    const target = 'https://<deploy-url>.kimi.page' + url.pathname + url.search;
-    return fetch(new Request(target, {
-      method: request.method,
-      headers: request.headers,
-      body: ['GET', 'HEAD'].includes(request.method) ? undefined : request.body,
-      redirect: 'follow',
-    }));
-  },
-};
-```
-
-**Pitfalls (all verified, do not retry these):**
-- `GET .../pages/projects/thai-rpg/upload-token` returns a JWT that `/pages/assets/check-missing` and `/pages/assets/upload` reject (8000013) — the wrangler Pages direct-upload flow is dead for this auth scheme.
-- Uploading assets via the Workers assets-upload-session and referencing them in a Pages deployment manifest serves 500s — Pages cannot see the Workers asset store. Only `_worker.js` (the proxy) works this way because Pages Functions load it from that store.
-- `PUT`ing a version directly to the backing worker `pages-worker--16090577-production` succeeds but receives no `pages.dev` traffic — Pages pins traffic to its canonical Pages deployment.
-- Creating ANY Pages deployment makes it live instantly, including a broken one. Always have the previous deployment ID ready for rollback.
-- 2026-07-28 UPDATE: `api.workers.cloudflare.com` STILL 522s on every path/port — now confirmed from 5 independent networks (sandbox, web-fetch tool, codetabs proxy, allorigins EU, and a Cloudflare-Worker-based proxy which timed out entirely), so this IS Cloudflare-side, not our egress. Verified dead ends, do not retry: `--resolve` to other Cloudflare anycast IPs → 403/1034 (edge IP restricted, zones pinned to anycast ranges); the same upload path on `api.cloudflare.com` → 401 (cfwau_ JWT rejected there); `/pages/assets/check-missing` + `/pages/assets/upload` with the real account API token → 8000013 (they only accept the Pages upload-token JWT, which is itself rejected — that whole flow is dead); `PUT /workers/scripts/*` → 10405 for this auth scheme; the account has NO workers.dev subdomain, so no relay Worker can be stood up. 2026-07-28 ~18:20Z: the GitHub Actions relay was BUILT AND RUN (workflow on relay-upload, dispatched via REST; run 30350096809) — Azure runners get **522 too** (probe and upload both; response body 'error code: 522'). SIX networks across multiple continents all 522: this is a genuine global outage of `api.workers.cloudflare.com`, unlisted on cloudflarestatus.com. NO network relay can help. Only paths: (1) wait for Cloudflare — a cron job in the user's Kimi chat retries every 2h from the sandbox and completes the whole deploy automatically; (2) the account owner reports the outage to Cloudflare (support ticket / community forum) to get it acknowledged; (3) user runs the upload curl from their own machine (near-zero odds given 6 networks, but free).
-- 2026-07-26: `api.workers.cloudflare.com` (the asset-upload host) returned persistent HTTP 522s for 2+ days across sessions — even `GET /` 522s, while `api.cloudflare.com` works fine and the status page shows no Workers incident. If the upload step 522s, don't burn tokens on tight retry loops: schedule a retry for later (e.g., cron reminder) and do other work meanwhile. The upload-session JWT expires 1 hour after issuance — mint a fresh one each retry round.
-
-### Durable hosting (2026-07-28, updated 2026-07-30) — LIVE, this is now the primary deployment
-
-Deployment no longer depends on any Kimi agent instance:
-
-- **App**: `https://kire321.github.io/` from repo `kire321/kire321.github.io` (master branch, **legacy branch-based Pages** — redeploys automatically on every push to master; no Pages API needed). Old Jekyll blog archived on branch `blog-archive`.
-- **CMS data**: `https://kire321.github.io/cms/` — a mirror of `kire321/thai-rpg-content@master` `public/` (**master is canonical** per user decision 2026-07-30: 340 episodes + Fireworks quality fixes; the old `main` was renamed to `510_episodes` and preserved, `staging` is parked WIP with stub data — see SKILL-CMS.md). **CMS editor UI**: `https://kire321.github.io/cms-ui/` — built from the same repo@master, data fetches point at `/cms/*.json` (never root-relative — that would hit the game's 1-episode fixture). Both assembled by `.github/workflows/deploy-app.yml` in the root repo (dispatch it via PAT `POST /repos/kire321/kire321.github.io/actions/workflows/deploy-app.yml/dispatches {"ref":"master"}`, or wait for its daily 04:23 UTC run). It builds `thai-rpg@master` + the CMS UI, copies CMS `public/` into `/cms`, commits to master. GITHUB_TOKEN only, no secrets.
-- **App code**: `DEFAULT_CMS_BASE='/cms'` (same-origin; SW scope `/` intercepts CMS + images so offline images work). CACHE_NAME `thai-rpg-2026-07-28-03`.
-- **Deploy procedure now**: push code to `thai-rpg` master (TDD as usual) -> dispatch the publisher workflow -> verify `https://kire321.github.io/sw.js` and `/cms/episodes.json` (and `/cms-ui/` when CMS UI changed). To confirm the `/cms` mirror is byte-identical to source without downloading 11MB, compare blob SHAs via `GET /repos/kire321/thai-rpg-content/contents/public/episodes.json?ref=master` vs `GET /repos/kire321/kire321.github.io/contents/cms/episodes.json?ref=master`.
-
-**Pitfalls (all verified live):**
-- On a user Pages site, URL path `/<reponame>/` is RESERVED for that repo's project site: a folder named after any repo (e.g. `thai-rpg-content/`) is SHADOWED and every file under it 404s — even when that repo has no Pages site. Use non-repo-named paths (`/cms`).
-- Fine-grained PAT with Pages RW granted still 403s on `POST /repos/*/pages` (site creation) — legacy branch Pages sidesteps this entirely.
-- GitHub Pages CDN caches 404s aggressively; after a deploy, verify with cache-busting query strings and from a second network.
-
-**Remaining**: point the Cloudflare proxy at the durable site once `api.workers.cloudflare.com` recovers from its global 522 outage (a cron job in the user's Kimi chat retries every 2h fully automatically — plain passthrough `_worker.js` to `https://kire321.github.io`; runbook in sandbox `/mnt/agents/output/deploy/STATE.md`; rollback deployment `bdb9ff79-4f62-4c10-bc14-89ef093f6c88`). Fallback proxy target: kimi.page build `z4vwnuwfhj43i`.
+**Pitfalls (verified live):**
+- On a user Pages site (`*.github.io`), path `/<reponame>/` is RESERVED for that repo's project site — never put content in a repo-named folder.
+- The old flow (kimi.page build + Cloudflare `_worker.js` proxy) is OBSOLETE: kimi.page URLs die with the agent instance that created them, and `api.workers.cloudflare.com` had a global HTTP 522 outage from 2026-07-26. Do not resurrect it. A `thai-rpg.pages.dev` proxy may still front the site as a plain passthrough to `kire321.github.io`.
+- GitHub REST is reliable from the sandbox; shell git push is flaky (HTTP/2) — if push fails, retry or use the Contents/Trees APIs.
 
 ### Deployment Checklist
 
-1. Bump SW cache version in `app/public/sw.js`
+1. Bump SW cache version in `public/sw.js`
 2. `npm install && npm run build` — zero errors
-3. `mshtools-website_version_manager` `build_version` (`type: "static"`) → get the `*.kimi.page` preview URL from the version card
-4. Update proxy `_worker.js` with the new URL and deploy via the 5-step Cloudflare procedure above
-5. Verify live site (sw.js CACHE_NAME, bundle 200, icon 200); roll back on failure
-6. Push to GitHub master
-
-***
+3. Push to `thai-rpg` master
+4. Dispatch the publisher workflow (or wait for the 04:23 UTC run)
+5. Verify `https://kire321.github.io/sw.js`, the bundle, and `/cms/episodes.json` with cache-busters
 
 ## Common Bugs and Their Fixes
 

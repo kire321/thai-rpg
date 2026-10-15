@@ -747,6 +747,77 @@ class GivenSegmentedEpisode_WhenCountingDueCards_ThenAllSegmentTagsCounted exten
   }
 }
 
+// ============ CHOICE DIFFICULTY (CMS string scheme) ============
+
+// CMS sends difficulty as 'easy'|'medium'|'hard' (strings). The frontend
+// must map them to the same skill-check rates as the old numeric 0|1|2:
+// easy=85%, medium=60%, hard=35% (before attribute bonus).
+
+function makeChoiceState(difficulty) {
+  return {
+    ...stateWithContent(),
+    episodes: [{
+      id: 'ep_choice',
+      title: 'Choice Episode',
+      acts: [{
+        id: 'act_1',
+        title: 'Act 1',
+        segments: [
+          { type: 'narrative', lines: [{ character: 'char_narrator', dialogue: 'Line.', stage_directions: [] }] },
+          { type: 'tag', tag: 'tag_402' },
+        ],
+        decision: {
+          line: { character: 'char_narrator', dialogue: 'Decide.', stage_directions: [] },
+          choices: [0, 1, 2].map((i) => ({
+            description: `Choice ${i}`,
+            difficulty,
+            pass_outcome: { line: { dialogue: 'Pass.' }, attribute: 'attr_ledger', delta: 1 },
+            fail_outcome: { line: { dialogue: 'Fail.' }, attribute: 'attr_ledger', delta: 0 },
+          })),
+        },
+      }],
+    }],
+    currentEpisodeId: 'ep_choice',
+    currentView: 'episode',
+    currentActIndex: 0,
+    currentLineIndex: 0,
+    actPhase: 'choice',
+  };
+}
+
+function tapChoiceWithRoll(difficulty, roll) {
+  const originalRandom = Math.random;
+  Math.random = () => roll;
+  try {
+    return Handlers.onTapChoice(makeChoiceState(difficulty), testEnv, 0);
+  } finally {
+    Math.random = originalRandom;
+  }
+}
+
+class GivenEasyChoiceString_WhenRollBelow85_ThenPass extends TestCase {
+  run() {
+    const update = tapChoiceWithRoll('easy', 0.5);
+    assertEqual(update.outcomePassed, true, "String 'easy' should use the 85% base rate (roll 0.5 passes)");
+    assertEqual(update.outcomeLine, 'Pass.', 'Pass outcome shown');
+  }
+}
+
+class GivenHardChoiceString_WhenRollAt50_ThenFail extends TestCase {
+  run() {
+    const update = tapChoiceWithRoll('hard', 0.5);
+    assertEqual(update.outcomePassed, false, "String 'hard' should use the 35% base rate (roll 0.5 fails)");
+    assertEqual(update.outcomeLine, 'Fail.', 'Fail outcome shown');
+  }
+}
+
+class GivenNumericDifficulty_WhenTapped_ThenStillWorks extends TestCase {
+  run() {
+    const update = tapChoiceWithRoll(2, 0.5);
+    assertEqual(update.outcomePassed, false, 'Numeric difficulty 2 (hard) keeps working (roll 0.5 fails)');
+  }
+}
+
 // ============ TEST RUNNER ============
 
 const allTests = [
@@ -813,6 +884,10 @@ const allTests = [
   GivenITapReset_WhenConfirmationShown_ThenDialogAppears,
   GivenConfirmationShown_WhenITapCancel_ThenDialogCloses,
   GivenConfirmationShown_WhenITapConfirm_ThenStateResets,
+  // Choice difficulty (CMS string scheme)
+  GivenEasyChoiceString_WhenRollBelow85_ThenPass,
+  GivenHardChoiceString_WhenRollAt50_ThenFail,
+  GivenNumericDifficulty_WhenTapped_ThenStillWorks,
 ];
 
 function runTests() {

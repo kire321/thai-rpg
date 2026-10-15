@@ -279,7 +279,7 @@ const ChoiceCard: React.FC<{
               <div className="flex items-center gap-2 mt-1.5">
                 {choice.difficulty !== undefined && (
                   <span className="text-[10px] px-2 py-0.5 bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-400 rounded-full capitalize">
-                    {['easy', 'medium', 'hard'][choice.difficulty] || choice.difficulty}
+                    {typeof choice.difficulty === 'number' ? (['easy', 'medium', 'hard'][choice.difficulty] || choice.difficulty) : choice.difficulty}
                   </span>
                 )}
                 {outcomeAttribute && (
@@ -401,7 +401,7 @@ const Footer: React.FC<{
   const allAttributeIds = Object.keys(attributes);
   if (allAttributeIds.length === 0) return null;
   return (
-    <footer className="fixed bottom-12 left-0 right-0 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-700 z-40">
+    <footer className="fixed bottom-0 left-0 right-0 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-700 z-40">
       <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 px-4 py-2 text-xs">
         {allAttributeIds.map((id) => {
           const score = attributeScores[id] || 0;
@@ -719,7 +719,7 @@ const ViewInner: React.FC<ViewProps> = (props) => {
   const outcomeAttribute = props.outcomeAttribute;
 
   return (
-    <div className={`min-h-screen bg-slate-100 dark:bg-slate-950 ${hasFooter ? 'pb-20' : ''}`}>
+    <div className={`min-h-screen bg-slate-100 dark:bg-slate-950 ${hasFooter ? 'pb-14' : ''}`}>
       <Header showGearIcon={showGearIcon} showNextScenario={currentView === 'episode'}
         doneCount={doneCount} dueCount={dueCount} newCount={newCount}
         leftCount={leftCount} episodesUnplayed={episodesUnplayed} dateshift={dateshift} showDateshift={showDateshift}

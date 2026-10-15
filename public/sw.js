@@ -1,6 +1,6 @@
 // Service Worker for Thai RPG PWA
-// BUILD_VERSION: 2026-08-18-01 — segments JSON format support (virtual acts) merged from staging
-const CACHE_NAME = 'thai-rpg-2026-08-18-01';
+// BUILD_VERSION: 2026-10-15-01 — footer flush to bottom; bundled-JSON fallback removed; CMS string difficulty; image cache invalidation on fresh content
+const CACHE_NAME = 'thai-rpg-2026-10-15-01';
 const CONTENT_CACHE_NAME = 'thai-rpg-content-v1';
 
 // Assets to cache on install. Each is cached INDIVIDUALLY so one failure

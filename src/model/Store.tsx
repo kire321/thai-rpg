@@ -78,6 +78,38 @@ function tagsArrayToMeta(tags: any[] | null): Record<string, { name: string; des
   return map;
 }
 
+// Cheap content fingerprint: two djb2 passes over the JSON of the
+// image-bearing files. Used to decide whether a fresh CMS read actually
+// CHANGED the pictures — without this, every online reload bumped
+// imageVersion (new ?v= stamp for identical bytes), orphaned all previously
+// cached image entries, and re-downloaded all 48 images on every launch.
+function contentFingerprint(...parts: any[]): string {
+  let h1 = 5381;
+  let h2 = 52711;
+  const s = JSON.stringify(parts);
+  for (let i = 0; i < s.length; i++) {
+    const c = s.charCodeAt(i);
+    h1 = (h1 * 33) ^ c;
+    h2 = (h2 * 31) ^ c;
+  }
+  return (h1 >>> 0).toString(36) + (h2 >>> 0).toString(36) + '.' + s.length.toString(36);
+}
+
+// Stamp picture URLs with the content version so (a) the browser re-renders
+// images whose bytes changed under an unchanged path, and (b) the offline
+// cache stores them under a fresh URL. Applied in BOTH loadAllContent and
+// useCachedData so online and offline renders request identical URLs.
+function stampPictures(maps: Record<string, any>[], imageVersion?: number) {
+  if (!imageVersion) return;
+  for (const map of maps) {
+    for (const item of Object.values(map) as any[]) {
+      if (item && typeof item.picture === 'string' && item.picture && !item.picture.includes('?v=')) {
+        item.picture = `${item.picture}?v=${imageVersion}`;
+      }
+    }
+  }
+}
+
 // CMS sends stage_directions as a string; our View expects an array.
 // Normalize all episode lines so stage_directions is always string[].
 function normalizeEpisode(ep: any): any {
@@ -669,15 +701,18 @@ export class Store extends Component<{}, StoreState> {
     let tags = results[5].data;
     if (results[5].fromCache) cachedFiles.push('tags');
 
-    // IMAGE CACHE INVALIDATION: when any file came FRESH from the CMS, the
-    // content may carry new pictures under OLD URLs (e.g. a regenerated
-    // portrait at the same /characters/<name>.png path). The SW serves
-    // images cache-first and the bulk-cache pass skips already-cached URLs,
-    // so without this the stale bytes would live forever. Bump imageVersion
-    // and force-refresh the pictures (see ensureImagesCached).
+    // IMAGE CACHE INVALIDATION: when image-bearing content CHANGES, pictures
+    // may appear under OLD URLs with NEW bytes (regenerated portrait at the
+    // same path). Bump imageVersion then, and only then — a fresh CMS read of
+    // UNCHANGED content keeps the old stamp, so previously cached ?v= entries
+    // stay valid and no images are re-downloaded. (2026-10-17: bumping on
+    // every fresh read orphaned the whole cache on each launch.)
     const freshFromCms = results.some(r => !r.fromCache && r.data);
     let imageVersion: number = this.state.imageVersion || 0;
-    if (freshFromCms) imageVersion = Date.now();
+    const newFingerprint = contentFingerprint(characters, places, tags);
+    const contentChanged = freshFromCms
+      && (!this.state.contentFingerprint || this.state.contentFingerprint !== newFingerprint);
+    if (contentChanged) imageVersion = Date.now();
 
     // For any null results, try falling back to existing state
     const existing = loadState();
@@ -718,18 +753,8 @@ export class Store extends Component<{}, StoreState> {
     const charactersMap = arrayToMap(characters);
     const placesMap = arrayToMap(places);
 
-    // Stamp picture URLs with the content version so (a) the browser
-    // re-renders images whose bytes changed under an unchanged path, and
-    // (b) the offline cache stores them under a fresh URL.
-    if (imageVersion) {
-      for (const map of [charactersMap, placesMap]) {
-        for (const item of Object.values(map) as any[]) {
-          if (item && typeof item.picture === 'string' && item.picture && !item.picture.includes('?v=')) {
-            item.picture = `${item.picture}?v=${imageVersion}`;
-          }
-        }
-      }
-    }
+    // Stamp picture URLs with the content version (see stampPictures).
+    stampPictures([charactersMap, placesMap], imageVersion);
     const attributesMap = arrayToMap(attributes);
     const tagsMap = tagsArrayToMap(tags);
     const tagsMeta = tagsArrayToMeta(tags);
@@ -761,6 +786,7 @@ export class Store extends Component<{}, StoreState> {
       isLoading: false,
       loadError: null,
       imageVersion,
+      contentFingerprint: newFingerprint,
       vocabItems,
       episodes: normalizedEpisodes,
       characters: charactersMap,
@@ -802,10 +828,13 @@ export class Store extends Component<{}, StoreState> {
       cachedFiles,
     });
 
-    // Prefetch (and repair) all images so the app works fully offline.
-    // forceRefresh when fresh CMS content arrived: evict old picture entries
-    // (same path, old bytes) before re-caching, so updated portraits appear.
-    this.ensureImagesCached(charactersMap, placesMap, freshFromCms);
+    // Prefetch (and repair) all images so the app works fully offline. When
+    // image-bearing content actually CHANGED, the URLs carry a fresh ?v=
+    // stamp and the SW re-fetches them; pruneStaleImageVariants() (inside the
+    // ensure pass) deletes superseded entries (old stamps, renamed orphans)
+    // — never BEFORE the fresh bytes land (deleting first left the cache
+    // empty when the fetch failed, worse than temporarily serving old bytes).
+    this.ensureImagesCached(charactersMap, placesMap);
   }
 
   // Inline card generation (same logic as controller)
@@ -843,6 +872,16 @@ export class Store extends Component<{}, StoreState> {
   //     stragglers through the SW as a second chance
   //   - runs on content load, on 'online', and on every foreground return,
   //     so gaps are repaired whenever the device is online
+  //
+  // 2026-10-17 (the "cache never updated to reflect new content" bug):
+  //   - imageVersion is bumped ONLY when image-bearing content changes
+  //     (contentFingerprint), not on every fresh read — every bump orphans
+  //     previous ?v= entries and re-downloads all images
+  //   - when a bump does happen, the SW serves across ?v= stamps
+  //     (ignoreSearch fallback) until the fresh bytes are cached, and only
+  //     then pruneStaleImageVariants() deletes superseded entries — never
+  //     before (old code evicted first; a failed refresh left the cache
+  //     EMPTY, strictly worse than serving stale bytes)
   private imageCacheUrls: string[] = [];
   private ensureImagesPromise: Promise<void> | null = null;
 
@@ -861,7 +900,7 @@ export class Store extends Component<{}, StoreState> {
 
   // Wait until the page is controlled by a service worker, so that image
   // requests are actually intercepted (and therefore cached).
-  private waitForSWController(timeoutMs = 10000): Promise<boolean> {
+  private waitForSWController(timeoutMs = 30000): Promise<boolean> {
     return new Promise((resolve) => {
       if (!('serviceWorker' in navigator)) return resolve(false);
       if (navigator.serviceWorker.controller) return resolve(true);
@@ -902,46 +941,79 @@ export class Store extends Component<{}, StoreState> {
         const cache = await caches.open(name);
         // ignoreVary: entries cached by <img> requests carry the Origin
         // header in their vary key — a plain string match (no Origin) must
-        // still see them, otherwise we report false gaps and re-repair forever
-        if (await cache.match(url, { ignoreVary: true })) return true;
+        // still see them, otherwise we report false gaps and re-repair forever.
+        // ignoreSearch: the SW serves cache entries across ?v= stamps
+        // (findInAnyCache falls back to ignoreSearch), so a URL is "cached"
+        // when any variant of its path is present.
+        if (await cache.match(url, { ignoreVary: true, ignoreSearch: true })) return true;
       }
     } catch (e) { /* ignore */ }
     return false;
   }
 
-  private ensureImagesCached(charactersMap?: Record<string, any>, placesMap?: Record<string, any>, forceRefresh = false): Promise<void> {
+  private ensureImagesCached(charactersMap?: Record<string, any>, placesMap?: Record<string, any>): Promise<void> {
     // Coalesce concurrent calls (load + online + visibilitychange can overlap)
     if (this.ensureImagesPromise) return this.ensureImagesPromise;
-    this.ensureImagesPromise = this.doEnsureImagesCached(charactersMap, placesMap, forceRefresh)
+    this.ensureImagesPromise = this.doEnsureImagesCached(charactersMap, placesMap)
       .finally(() => { this.ensureImagesPromise = null; });
     return this.ensureImagesPromise;
   }
 
-  // Evict every cached entry for the given URLs (any query string) from all
-  // thai-rpg asset caches. Used when fresh CMS content arrives, because the
-  // SW serves images cache-first and would otherwise keep serving old bytes
-  // for a picture whose file was replaced under the same name.
-  private async evictImageCacheEntries(urls: string[]) {
+  // Delete superseded image entries from all thai-rpg asset caches, so the
+  // cache reflects the CURRENT content instead of accumulating dead weight:
+  //   - variants of current paths cached under a DIFFERENT ?v= stamp
+  //     (only deleted once the current stamp is safely cached somewhere)
+  //   - orphans: files the current content no longer references (e.g.
+  //     renamed away during a content regeneration)
+  // Old entries are deliberately kept until the fresh bytes are in place —
+  // the SW still serves them as a fallback while the new version downloads.
+  private async pruneStaleImageVariants(currentUrls: string[]) {
     try {
-      const names = await caches.keys();
+      const currentByPath = new Map<string, string>();
+      const managedPrefixes = new Set<string>();
+      for (const u of currentUrls) {
+        const pu = new URL(u, location.href);
+        // Store the ABSOLUTE href: cache keys are absolute, a raw (possibly
+        // relative) URL would mismatch and prune everything in sight.
+        currentByPath.set(pu.pathname, pu.href);
+        managedPrefixes.add(pu.pathname.replace(/[^/]+$/, ''));
+      }
+      const isManagedImage = (pathname: string) =>
+        [...managedPrefixes].some((pre) => pathname.startsWith(pre))
+        && /\.(png|jpe?g|webp|gif|svg)$/i.test(pathname);
+
+      // Which current paths have their EXACT current URL cached somewhere?
+      const exactPaths = new Set<string>();
+      const names = (await caches.keys()).filter((n) => n.startsWith('thai-rpg') && !n.includes('content'));
       for (const name of names) {
-        if (!name.startsWith('thai-rpg') || name.includes('content')) continue;
         const cache = await caches.open(name);
-        for (const url of urls) {
-          try { await cache.delete(url, { ignoreSearch: true }); } catch { /* ignore */ }
+        for (const u of currentUrls) {
+          if (await cache.match(u, { ignoreVary: true })) exactPaths.add(new URL(u, location.href).pathname);
         }
       }
-    } catch { /* ignore */ }
+
+      for (const name of names) {
+        const cache = await caches.open(name);
+        for (const req of await cache.keys()) {
+          const p = new URL(req.url).pathname;
+          if (!isManagedImage(p)) continue;
+          if (!currentByPath.has(p)) {
+            console.log('[Images] Pruning orphan (no longer referenced):', req.url);
+            await cache.delete(req);
+          } else if (req.url !== currentByPath.get(p) && exactPaths.has(p)) {
+            console.log('[Images] Pruning superseded variant:', req.url);
+            await cache.delete(req);
+          }
+        }
+      }
+    } catch (e: any) {
+      console.warn('[Images] Prune failed (non-fatal):', e?.message);
+    }
   }
 
-  private async doEnsureImagesCached(charactersMap?: Record<string, any>, placesMap?: Record<string, any>, forceRefresh = false): Promise<void> {
+  private async doEnsureImagesCached(charactersMap?: Record<string, any>, placesMap?: Record<string, any>): Promise<void> {
     const urls = this.collectImageUrls(charactersMap, placesMap);
     if (urls.length === 0) return;
-
-    if (forceRefresh && navigator.onLine) {
-      console.log(`[Images] Fresh CMS content — evicting ${urls.length} possibly-stale image entries`);
-      await this.evictImageCacheEntries(urls);
-    }
     this.imageCacheUrls = urls;
 
     // Offline right now? Don't burn retries — we'll run again on 'online'
@@ -990,6 +1062,15 @@ export class Store extends Component<{}, StoreState> {
       console.warn(`[Images] Offline cache INCOMPLETE: ${cachedCount}/${urls.length} images. Missing:`,
         missing.map((u) => u.split('/').pop()).join(', '));
     }
+
+    // Remove superseded cache entries (old ?v= stamps, renamed orphans)
+    // whenever a pass completes — pruneStaleImageVariants itself refuses to
+    // delete a variant until the EXACT current URL is cached somewhere, so
+    // an interrupted refresh degrades to "serving the old version", never
+    // to "nothing at all". Gating this on forceRefresh alone never prunes:
+    // the bump pass often runs while the new bytes can't download yet
+    // (offline/flaky), and later passes have forceRefresh=false.
+    await this.pruneStaleImageVariants(urls);
   }
 
   // Called when the device comes back online or the app returns to the
@@ -1053,6 +1134,11 @@ export class Store extends Component<{}, StoreState> {
     const normalizedEpisodes = episodes.map(normalizeEpisode);
     const charactersMap = arrayToMap(characters);
     const placesMap = arrayToMap(places);
+    // Stamp with the persisted imageVersion so the offline first paint
+    // requests the SAME versioned URLs as online renders (previously this
+    // path rendered unversioned URLs, 503-ing against versioned cache entries
+    // and producing duplicate "broken" diagnostics entries).
+    stampPictures([charactersMap, placesMap], lightweight.imageVersion);
     const attributesMap = arrayToMap(attributes);
     const tagsMap = tagsArrayToMap(tags);
     const tagsMeta = tagsArrayToMeta(tags);

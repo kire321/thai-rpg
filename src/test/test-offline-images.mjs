@@ -22,7 +22,11 @@ import { chromium } from 'playwright';
 
 const BASE = process.argv[2] || 'http://127.0.0.1:8088';
 const CMS = process.argv[3] || 'http://127.0.0.1:9001';
-const BLOCKED = ['narrator.png', 'khrueang_market.png'];
+// 2026-10-18: khrueang_market.png no longer exists in the regenerated CMS
+// content (Oct-16 batch) — blocking it made the repair check fail on a file
+// the app never requests. Use the two images the user's diagnostics actually
+// showed broken.
+const BLOCKED = ['narrator.png', 'grammar_mill.png'];
 let failures = 0;
 const check = (name, cond, extra = '') => {
   console.log(`${cond ? 'PASS' : 'FAIL'}  ${name}${extra ? ' — ' + extra : ''}`);

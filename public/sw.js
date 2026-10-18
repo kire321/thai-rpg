@@ -1,6 +1,7 @@
 // Service Worker for Thai RPG PWA
-// BUILD_VERSION: 2026-10-15-01 — footer flush to bottom; bundled-JSON fallback removed; CMS string difficulty; image cache invalidation on fresh content
-const CACHE_NAME = 'thai-rpg-2026-10-15-01';
+// BUILD_VERSION: 2026-10-17-01 — version-tolerant image cache serving (ignoreSearch fallback);
+// exact-version CACHE_URLS refresh; no churn on unchanged content (fingerprint-gated version bumps in Store)
+const CACHE_NAME = 'thai-rpg-2026-10-17-01';
 const CONTENT_CACHE_NAME = 'thai-rpg-content-v1';
 
 // Assets to cache on install. Each is cached INDIVIDUALLY so one failure
@@ -12,8 +13,11 @@ const STATIC_ASSETS = [
   'icon-512x512.png',
 ];
 
-// In-memory stats for diagnostics (reset on SW restart)
+// In-memory stats for diagnostics (reset on SW restart).
+// startedAt lets the diagnostics panel distinguish "never intercepted anything"
+// from "SW restarted and counters were reset".
 const swStats = {
+  startedAt: Date.now(),
   cacheHits: 0,
   cacheMisses: 0,
   networkFetches: 0,
@@ -88,16 +92,24 @@ function stripVaryHeader(response) {
   });
 }
 
-// Helper: find a cached response in ANY thai-rpg cache (current or old)
+// Helper: find a cached response in ANY thai-rpg cache (current or old).
+// SERVING policy: try the exact URL first, then fall back to ignoring the
+// query string. The app stamps picture URLs with ?v=<imageVersion> whenever
+// content changes, but entries cached before the stamp (or under a previous
+// stamp) only differ by query — they must still be served offline, otherwise
+// a content bump breaks every cached image until the new version lands.
+// Stale bytes are prevented by Store.pruneStaleImageVariants(), which deletes
+// superseded variants once the fresh ones are cached.
 async function findInAnyCache(request) {
   const cacheNames = await caches.keys();
   const allCaches = cacheNames.filter((n) => n.startsWith('thai-rpg') && !n.includes('content'));
 
-  // Search current cache first
+  // Search current cache first: exact match, then query-agnostic fallback
   const currentCache = allCaches.find((n) => n === CACHE_NAME);
   if (currentCache) {
     const cache = await caches.open(currentCache);
-    const match = await cache.match(request, { ignoreVary: true });
+    const match = await cache.match(request, { ignoreVary: true })
+      || await cache.match(request, { ignoreVary: true, ignoreSearch: true });
     if (match) return { response: match, cacheName: currentCache, isCurrent: true };
   }
 
@@ -105,10 +117,25 @@ async function findInAnyCache(request) {
   for (const name of allCaches) {
     if (name === CACHE_NAME) continue;
     const cache = await caches.open(name);
-    const match = await cache.match(request, { ignoreVary: true });
+    const match = await cache.match(request, { ignoreVary: true })
+      || await cache.match(request, { ignoreVary: true, ignoreSearch: true });
     if (match) return { response: match, cacheName: name, isCurrent: false };
   }
 
+  return null;
+}
+
+// Helper for CACHE-DECISION paths (not serving): is THIS EXACT URL version
+// already cached? Query-sensitive on purpose — when content is refreshed the
+// app asks for ?v=<new> and we must re-fetch even if ?v=<old> is present.
+async function findExactInAnyCache(url) {
+  const cacheNames = await caches.keys();
+  const allCaches = cacheNames.filter((n) => n.startsWith('thai-rpg') && !n.includes('content'));
+  for (const name of allCaches) {
+    const cache = await caches.open(name);
+    const match = await cache.match(url, { ignoreVary: true });
+    if (match) return { response: match, cacheName: name };
+  }
   return null;
 }
 
@@ -235,7 +262,10 @@ async function cacheUrls(urls, client) {
   const results = { total: unique.length, alreadyCached: 0, cached: [], failed: [] };
   for (const url of unique) {
     try {
-      const existing = await findInAnyCache(url);
+      // Exact-version check: a ?v=<old> entry must NOT satisfy a ?v=<new>
+      // request — fresh content must actually re-fetch. (Serving still falls
+      // back to other variants, see findInAnyCache.)
+      const existing = await findExactInAnyCache(url);
       if (existing) { results.alreadyCached++; continue; }
       let ok = false;
       for (let attempt = 0; attempt < 2 && !ok; attempt++) {

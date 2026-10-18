@@ -7,7 +7,9 @@ import { chromium } from 'playwright';
 const BASE = process.argv[2] || 'http://127.0.0.1:8088';
 const CMS = process.argv[3] || 'http://127.0.0.1:9001';
 const LEGACY_CACHE = 'thai-rpg-2026-07-14-01'; // old SW's cache name (preserved)
-const LEGACY_IMG = CMS + '/places/silent_zone.png';
+// 2026-10-18: silent_zone.png was renamed in the Oct-16 content batch
+// (now silent_pond.png) — the old name 404s and put() stored the 404.
+const LEGACY_IMG = CMS + '/places/silent_pond.png';
 
 const browser = await chromium.launch({ headless: true });
 const context = await browser.newContext({ serviceWorkers: 'allow' });

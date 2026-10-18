@@ -38,7 +38,9 @@ for (let i = 0; i < 30; i++) {
       for (const n of await caches.keys()) {
         if (!n.startsWith('thai-rpg') || n.includes('content')) continue;
         const c = await caches.open(n);
-        if (await c.match(url, { ignoreVary: true })) { found = true; break; }
+        // Entries are cached under version-stamped (?v=) URLs — match any variant
+// of the path, same policy as the app's isUrlCached().
+        if (await c.match(url, { ignoreVary: true, ignoreSearch: true })) { found = true; break; }
       }
       if (!found) missing.push(url.split('/').pop());
     }

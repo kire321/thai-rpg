@@ -98,7 +98,9 @@ const CachedImage: React.FC<{ src: string; alt: string }> = ({ src, alt }) => {
       crossOrigin="anonymous"
       onError={() => {
         imageDiagnostics.lastError = `Failed to load: ${src}`;
-        imageDiagnostics.brokenImages.push(src);
+        // Dedupe: the same URL can fail repeatedly (unversioned + versioned
+        // renders, retry loops) and the list is diagnostic-only.
+        if (!imageDiagnostics.brokenImages.includes(src)) imageDiagnostics.brokenImages.push(src);
         setLoadFailed(true);
       }}
     />
@@ -593,6 +595,9 @@ const ImageCacheDiagnostics: React.FC = () => {
           setTimeout(() => res([]), 2000);
         });
         const [s, u] = await Promise.all([p1, p2]);
+        // Humanize the SW start time so an all-zeros stat block is
+        // recognizable as "SW restarted, counters reset" rather than "broken"
+        if (s && s.startedAt) s.startedAt = new Date(s.startedAt).toISOString();
         setSwStats(s);
         if (u.length) setSwCacheUrls(u);
       }

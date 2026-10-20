@@ -650,8 +650,10 @@ function isThaiText(text) {
 // ============ SEGMENTED EPISODES (segments JSON format) ============
 
 // A segmented act: narrative and tag segments interleaved. Each tag segment
-// becomes one "virtual act": lines_before = narrative since previous tag,
-// lines_after = narrative until next tag; decision only on the last one.
+// becomes one "virtual act": lines_before = narrative since the previous
+// tag; lines_after = narrative until act end, ONLY on the last virtual act
+// (mid-act narrative is the next virtual act's lines_before — duplicating
+// it as lines_after showed it twice); decision only on the last one.
 const segmentedEpisode = {
   id: 'ep_seg',
   title: 'Segmented Episode',
@@ -710,13 +712,12 @@ class GivenSegmentedAct_WhenAdvancingPastFirstQuiz_ThenSecondVirtualActStarts ex
     let update = Handlers.onTapNextLine(state, testEnv);
     assertEqual(update.actPhase, 'vocab_review', 'After lines_before comes vocab review');
 
-    // Rate the quiz card, then advance through lines_after (1 line)
+    // Rate the quiz card — virtual act 0 has NO lines_after (the mid-act
+    // narrative belongs to virtual act 1), so rating advances straight to
+    // virtual act 1's lines_before without an empty screen in between.
     state = { ...state, ...update };
     const cardId = state.vocabReviewCardId;
     update = Handlers.onRateCard(state, testEnv, cardId, 'good');
-    state = { ...state, ...update, actPhase: 'lines_after', currentLineIndex: 1 };
-    update = Handlers.onTapNextLine(state, testEnv);
-    // Virtual act 0 has no decision → advance straight to virtual act 1
     assertEqual(update.currentActIndex, 1, 'Advanced to second virtual act');
     assertEqual(update.actPhase, 'lines_before', 'Second virtual act starts at lines_before');
     const props = getProps({ ...state, ...update }, testEnv);
@@ -799,7 +800,7 @@ class GivenEasyChoiceString_WhenRollBelow85_ThenPass extends TestCase {
   run() {
     const update = tapChoiceWithRoll('easy', 0.5);
     assertEqual(update.outcomePassed, true, "String 'easy' should use the 85% base rate (roll 0.5 passes)");
-    assertEqual(update.outcomeLine, 'Pass.', 'Pass outcome shown');
+    assertEqual(update.outcomeLine?.dialogue, 'Pass.', 'Pass outcome shown');
   }
 }
 
@@ -807,7 +808,7 @@ class GivenHardChoiceString_WhenRollAt50_ThenFail extends TestCase {
   run() {
     const update = tapChoiceWithRoll('hard', 0.5);
     assertEqual(update.outcomePassed, false, "String 'hard' should use the 35% base rate (roll 0.5 fails)");
-    assertEqual(update.outcomeLine, 'Fail.', 'Fail outcome shown');
+    assertEqual(update.outcomeLine?.dialogue, 'Fail.', 'Fail outcome shown');
   }
 }
 
@@ -815,6 +816,266 @@ class GivenNumericDifficulty_WhenTapped_ThenStillWorks extends TestCase {
   run() {
     const update = tapChoiceWithRoll(2, 0.5);
     assertEqual(update.outcomePassed, false, 'Numeric difficulty 2 (hard) keeps working (roll 0.5 fails)');
+  }
+}
+
+// ============ BUG FIX TESTS (Round 3: 2026-10-20) ============
+
+// --- Bug 1: Segmented acts must not repeat narrative between tags ---
+// A segmented act [narrative A, tag, narrative B, tag, narrative C] used to
+// give virtual act 0 lines_after = B AND virtual act 1 lines_before = B,
+// so the player saw B twice ("the three lines repeat before the second
+// vocab review"). Each narrative line must appear exactly once when the
+// episode is played start to finish.
+
+class GivenSegmentedActWithTwoTags_WhenPlayingThrough_EachLineShownOnce extends TestCase {
+  run() {
+    const ep = {
+      id: 'ep_dup',
+      title: 'Dup Episode',
+      acts: [{
+        id: 'act_1',
+        segments: [
+          { type: 'narrative', lines: [
+            { character: 'char_narrator', dialogue: 'Alpha one.', stage_directions: [] },
+            { character: 'char_narrator', dialogue: 'Alpha two.', stage_directions: [] },
+          ] },
+          { type: 'tag', tag: 'tag_091' },
+          { type: 'narrative', lines: [
+            { character: 'char_narrator', dialogue: 'Beta one.', stage_directions: [] },
+            { character: 'char_narrator', dialogue: 'Beta two.', stage_directions: [] },
+            { character: 'char_narrator', dialogue: 'Beta three.', stage_directions: [] },
+          ] },
+          { type: 'tag', tag: 'tag_402' },
+          { type: 'narrative', lines: [
+            { character: 'char_narrator', dialogue: 'Gamma one.', stage_directions: [] },
+          ] },
+        ],
+        decision: {
+          line: { character: 'char_narrator', dialogue: 'Decide?', stage_directions: [] },
+          choices: [{
+            description: 'Go', difficulty: 'easy',
+            pass_outcome: { line: { dialogue: 'Pass text.' }, attribute: 'attr_x', delta: 1 },
+            fail_outcome: { line: { dialogue: 'Fail text.' }, attribute: 'attr_x', delta: 0 },
+          }],
+        },
+      }],
+    };
+    let state = {
+      ...stateWithContent({
+        tags: { tag_091: ['402-1.'], tag_402: ['402-2.'] },
+        tagMeta: { tag_091: { name: 'one' }, tag_402: { name: 'two' } },
+        characters: {}, places: {},
+      }),
+      episodes: [ep],
+      currentEpisodeId: 'ep_dup',
+      currentView: 'episode',
+      currentActIndex: 0,
+      currentLineIndex: 0,
+      actPhase: 'lines_before',
+    };
+
+    const shown = [];
+    // Play the whole episode, collecting every dialogue line shown.
+    for (let guard = 0; guard < 100; guard++) {
+      const props = getProps(state, testEnv);
+      if (props.actPhase === 'lines_before' || props.actPhase === 'lines_after') {
+        if (props.currentLine?.dialogue) shown.push(props.currentLine.dialogue);
+        state = { ...state, ...Handlers.onTapNextLine(state, testEnv) };
+      } else if (props.actPhase === 'vocab_review') {
+        const cardId = state.vocabReviewCardId;
+        if (cardId) state = { ...state, ...Handlers.onRateCard(state, testEnv, cardId, 4) };
+        else state = { ...state, ...Handlers.onVocabReviewDone(state, testEnv) };
+      } else if (props.actPhase === 'choice') {
+        if (props.currentLine?.dialogue) shown.push(props.currentLine.dialogue);
+        const originalRandom = Math.random;
+        Math.random = () => 0.0; // force pass
+        try {
+          state = { ...state, ...Handlers.onTapChoice(state, testEnv, 0) };
+        } finally { Math.random = originalRandom; }
+      } else if (props.actPhase === 'outcome') {
+        if (props.currentLine?.dialogue) shown.push(props.currentLine.dialogue);
+        state = { ...state, ...Handlers.onOutcomeDone(state, testEnv) };
+        if (state.currentView === 'welcome') break;
+      } else {
+        break;
+      }
+    }
+
+    const expected = ['Alpha one.', 'Alpha two.', 'Beta one.', 'Beta two.', 'Beta three.', 'Gamma one.', 'Decide?', 'Pass text.'];
+    for (const line of expected) {
+      const count = shown.filter(s => s === line).length;
+      assertEqual(count, 1, `Line "${line}" should appear exactly once, got ${count}. All shown: ${JSON.stringify(shown)}`);
+    }
+    // Order preserved: Beta lines come after Alpha, before Gamma
+    const idx = (l) => shown.indexOf(l);
+    assert(idx('Alpha two.') < idx('Beta one.'), 'Alpha before Beta');
+    assert(idx('Beta three.') < idx('Gamma one.'), 'Beta before Gamma');
+  }
+}
+
+// --- Bug 2: Outcome text must be visible ---
+// CMS stores outcome.line as a full line OBJECT. The controller used to
+// flatten it to outcome.line.dialogue (a string); LineCard reads
+// line.dialogue, so the outcome card rendered blank. The outcome line must
+// survive as a line object all the way to getProps.
+
+class GivenOutcomeLineObject_WhenChoiceResolved_ThenOutcomeTextVisible extends TestCase {
+  run() {
+    const state = makeChoiceState('easy');
+    const originalRandom = Math.random;
+    Math.random = () => 0.0; // force pass
+    let update;
+    try {
+      update = Handlers.onTapChoice(state, testEnv, 0);
+    } finally { Math.random = originalRandom; }
+    assertEqual(update.actPhase, 'outcome', 'Should enter outcome phase');
+    assert(update.outcomeLine && typeof update.outcomeLine === 'object', 'outcomeLine must be a line object');
+    assertEqual(update.outcomeLine.dialogue, 'Pass.', 'Outcome object carries the dialogue');
+    const props = getProps({ ...state, ...update }, testEnv);
+    assert(props.currentLine && props.currentLine.dialogue === 'Pass.',
+      `getProps should expose outcome dialogue, got: ${JSON.stringify(props.currentLine)}`);
+  }
+}
+
+// CMS corruption pattern also applies to outcome lines: dialogue '[None]'
+// with the real text in the 'line' field must be normalized.
+class GivenCorruptedOutcomeLine_WhenChoiceResolved_ThenRealTextShown extends TestCase {
+  run() {
+    const state = makeChoiceState('easy');
+    // Corrupt the pass outcome the way the CMS corrupts narrative lines
+    state.episodes[0].acts[0].decision.choices[0].pass_outcome.line = {
+      character: 'char_bandit', // corrupted character
+      dialogue: '[None]',       // corrupted dialogue
+      line: 'The real outcome text.',
+      char: 'char_narrator',
+    };
+    const originalRandom = Math.random;
+    Math.random = () => 0.0;
+    let update;
+    try {
+      update = Handlers.onTapChoice(state, testEnv, 0);
+    } finally { Math.random = originalRandom; }
+    const props = getProps({ ...state, ...update }, testEnv);
+    assert(props.currentLine && props.currentLine.dialogue === 'The real outcome text.',
+      `Corrupted outcome must show real text, got: ${JSON.stringify(props.currentLine)}`);
+    assert(props.currentLine.character === 'char_narrator',
+      `Corrupted outcome character must prefer 'char', got: ${props.currentLine.character}`);
+  }
+}
+
+// Legacy states (exported before the fix) may hold outcomeLine as a bare
+// string — getProps must still expose it as a line object.
+class GivenLegacyStringOutcomeLine_WhenRendering_ThenTextStillVisible extends TestCase {
+  run() {
+    const state = {
+      ...makeChoiceState('easy'),
+      actPhase: 'outcome',
+      outcomeLine: 'Old-style outcome string.',
+      outcomePassed: true,
+    };
+    const props = getProps(state, testEnv);
+    assert(props.currentLine && props.currentLine.dialogue === 'Old-style outcome string.',
+      `String outcomeLine must be wrapped, got: ${JSON.stringify(props.currentLine)}`);
+  }
+}
+
+// --- Bug 4: Episode selection must see segmented first acts ---
+// getNextEpisode used to check only firstAct.tag (flat field). Episodes
+// whose first act is SEGMENTED (act.tag === undefined, tags live in
+// segments) never matched, so the selector fell back to least-played and
+// the overpressure valve then skipped every quiz. Reproduced with the
+// user's exported state: most overdue card (again) has vocabId in
+// tag_172; episode ep_114's first act segments contain tag_172.
+
+import { getNextEpisode } from '../controller/controller.js';
+
+class GivenSegmentedFirstActWithDueVocab_WhenSelectingEpisode_ThenDueEpisodeChosen extends TestCase {
+  run() {
+    // Two episodes: ep_fallback (flat first act, unrelated tag, 0 plays)
+    // and ep_due (segmented first act containing the overdue card's tag,
+    // 5 plays). Pre-fix, ep_fallback won (fewest plays). The due episode
+    // must win even though it was played more.
+    const mk = (id, firstAct) => ({
+      id, title: id, acts: [{ id: `${id}_a1`, ...firstAct, decision: { line: { dialogue: 'D?' }, choices: [] } }],
+    });
+    const episodes = [
+      mk('ep_fallback', { tag: 'tag_zzz', lines_before: [], lines_after: [] }),
+      mk('ep_due', {
+        segments: [
+          { type: 'narrative', lines: [{ character: 'char_narrator', dialogue: 'Line.', stage_directions: [] }] },
+          { type: 'tag', tag: 'tag_172' },
+        ],
+      }),
+    ];
+    const state = {
+      ...stateWithContent({
+        episodes,
+        tags: { tag_172: ['402-1.'], tag_zzz: ['402-2.'] },
+        cardStats: {
+          // The again card is the most overdue card
+          'card-402-1.-eng-thai': { repetitions: 0, interval: 1, ef: 2.5, lastReviewed: 19724, failedToday: true },
+        },
+        againQueue: ['card-402-1.-eng-thai'],
+        episodePlays: { ep_fallback: 0, ep_due: 5 },
+        episodesPlayedToday: [],
+      }),
+    };
+    const next = getNextEpisode(state, testEnv);
+    assert(next && next.id === 'ep_due',
+      `Episode reviewing the due card must be selected, got: ${next?.id}`);
+  }
+}
+
+// The overpressure valve must NOT skip the vocab review when the episode
+// was selected because its act tags contain due cards.
+class GivenAgainCardAndDueEpisodeSelected_WhenReachingVocabReview_ThenQuizNotSkipped extends TestCase {
+  run() {
+    const ep = {
+      id: 'ep_due2',
+      title: 'Due Episode',
+      acts: [{
+        id: 'act_1',
+        segments: [
+          { type: 'narrative', lines: [{ character: 'char_narrator', dialogue: 'Line.', stage_directions: [] }] },
+          { type: 'tag', tag: 'tag_172' },
+        ],
+        decision: { line: { dialogue: 'D?' }, choices: [] },
+      }],
+    };
+    let state = {
+      ...stateWithContent({
+        episodes: [ep],
+        tags: { tag_172: ['402-1.'] },
+        tagMeta: { tag_172: { name: 'probably_6' } },
+        characters: {}, places: {},
+        cardStats: {
+          'card-402-1.-eng-thai': { repetitions: 0, interval: 1, ef: 2.5, lastReviewed: 19724, failedToday: true },
+        },
+        againQueue: ['card-402-1.-eng-thai'],
+        duePressure: true,
+      }),
+      currentEpisodeId: 'ep_due2',
+      currentView: 'episode',
+      currentActIndex: 0,
+      currentLineIndex: 0,
+      actPhase: 'lines_before',
+      // Force overpressure: many due cards, few new
+      episodesPlayedToday: [],
+    };
+    // Make counters.due > counters.new: 5 again-ish due cards, 0 new today
+    state.cardStats = {
+      'card-402-1.-eng-thai': { repetitions: 0, interval: 1, ef: 2.5, lastReviewed: 19724, failedToday: true },
+      'card-402-1.-thai-eng': { repetitions: 2, interval: 1, ef: 2.5, lastReviewed: 19720 },
+      'card-402-2.-eng-thai': { repetitions: 2, interval: 1, ef: 2.5, lastReviewed: 19720 },
+      'card-402-2.-thai-eng': { repetitions: 2, interval: 1, ef: 2.5, lastReviewed: 19720 },
+      'card-402-3.-eng-thai': { repetitions: 2, interval: 1, ef: 2.5, lastReviewed: 19720 },
+    };
+    state = { ...state, ...Handlers.onTapNextLine(state, testEnv) };
+    assertEqual(state.actPhase, 'vocab_review', 'Vocab review must NOT be skipped when the act tag has due cards');
+    const props = getProps(state, testEnv);
+    assert(props.currentCard && props.currentCard.id === 'card-402-1.-eng-thai',
+      `The again card must be the quiz card, got: ${props.currentCard?.id}`);
   }
 }
 
@@ -888,6 +1149,13 @@ const allTests = [
   GivenEasyChoiceString_WhenRollBelow85_ThenPass,
   GivenHardChoiceString_WhenRollAt50_ThenFail,
   GivenNumericDifficulty_WhenTapped_ThenStillWorks,
+  // Bug fixes 2026-10-20
+  GivenSegmentedActWithTwoTags_WhenPlayingThrough_EachLineShownOnce,
+  GivenOutcomeLineObject_WhenChoiceResolved_ThenOutcomeTextVisible,
+  GivenCorruptedOutcomeLine_WhenChoiceResolved_ThenRealTextShown,
+  GivenLegacyStringOutcomeLine_WhenRendering_ThenTextStillVisible,
+  GivenSegmentedFirstActWithDueVocab_WhenSelectingEpisode_ThenDueEpisodeChosen,
+  GivenAgainCardAndDueEpisodeSelected_WhenReachingVocabReview_ThenQuizNotSkipped,
 ];
 
 function runTests() {

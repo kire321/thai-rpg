@@ -160,7 +160,6 @@ function getVirtualAct(act, vIndex) {
   const thisTag = tagSegs[vIndex];
   const thisIdx = act.segments.indexOf(thisTag);
   const prevIdx = vIndex > 0 ? act.segments.indexOf(tagSegs[vIndex - 1]) : -1;
-  const nextIdx = vIndex + 1 < tagSegs.length ? act.segments.indexOf(tagSegs[vIndex + 1]) : act.segments.length;
 
   // lines_before: narrative segments between previous tag (or start) and this tag
   const linesBefore = [];
@@ -171,16 +170,21 @@ function getVirtualAct(act, vIndex) {
     }
   }
 
-  // lines_after: narrative segments between this tag and next tag (or end)
+  const isLastVirtual = vIndex === tagSegs.length - 1;
+
+  // lines_after: ONLY the last virtual act carries the trailing narrative.
+  // Narrative between this tag and the NEXT tag is the next virtual act's
+  // lines_before — giving it to this act as lines_after too would show it
+  // TWICE (bug: "the three lines repeat before the second vocab review").
   const linesAfter = [];
-  for (let i = thisIdx + 1; i < nextIdx; i++) {
-    const seg = act.segments[i];
-    if (seg.type === 'narrative' && Array.isArray(seg.lines)) {
-      linesAfter.push(...seg.lines.map(normalizeLine));
+  if (isLastVirtual) {
+    for (let i = thisIdx + 1; i < act.segments.length; i++) {
+      const seg = act.segments[i];
+      if (seg.type === 'narrative' && Array.isArray(seg.lines)) {
+        linesAfter.push(...seg.lines.map(normalizeLine));
+      }
     }
   }
-
-  const isLastVirtual = vIndex === tagSegs.length - 1;
 
   return {
     ...act,
@@ -261,7 +265,11 @@ function getCurrentLine(state) {
     line = act.decision.line || null;
   }
   if (phase === 'outcome') {
-    line = state.outcomeLine || null;
+    // Legacy states (exported before the outcome-object fix) may hold a
+    // bare string — wrap it so LineCard always receives a line object.
+    line = typeof state.outcomeLine === 'string'
+      ? { dialogue: state.outcomeLine }
+      : (state.outcomeLine || null);
   }
   
   // Normalize CMS data quality issues before returning
@@ -346,7 +354,7 @@ function getNextEpisode(state, env) {
 
   // Step 1: Find the most overdue card
   if (cards.length === 0) {
-    return state.episodes.sort((a, b) => (episodePlays[a.id] || 0) - (episodePlays[b.id] || 0))[0];
+    return [...state.episodes].sort((a, b) => (episodePlays[a.id] || 0) - (episodePlays[b.id] || 0))[0];
   }
 
   const sortedByDue = [...cards].sort((a, b) => {
@@ -364,20 +372,24 @@ function getNextEpisode(state, env) {
   }
 
   if (matchingTags.length === 0) {
-    return state.episodes.sort((a, b) => (episodePlays[a.id] || 0) - (episodePlays[b.id] || 0))[0];
+    return [...state.episodes].sort((a, b) => (episodePlays[a.id] || 0) - (episodePlays[b.id] || 0))[0];
   }
 
-  // Step 3: Find episodes whose first act uses one of the matching tags
+  // Step 3: Find episodes whose first act uses one of the matching tags.
+  // MUST use getActTags — most episodes are SEGMENTED (tags live in
+  // act.segments, act.tag is undefined). Checking firstAct.tag alone
+  // matched nothing, fell back to least-played, and the overpressure
+  // valve then skipped every quiz (bug: again-cards never reviewed).
   let candidateEpisodes = [];
   for (const episode of state.episodes) {
     const firstAct = episode.acts?.[0];
-    if (firstAct && matchingTags.includes(firstAct.tag)) {
+    if (firstAct && getActTags(firstAct).some(t => matchingTags.includes(t))) {
       candidateEpisodes.push(episode);
     }
   }
 
   if (candidateEpisodes.length === 0) {
-    return state.episodes.sort((a, b) => (episodePlays[a.id] || 0) - (episodePlays[b.id] || 0))[0];
+    return [...state.episodes].sort((a, b) => (episodePlays[a.id] || 0) - (episodePlays[b.id] || 0))[0];
   }
 
   // Step 4: Exclude episodes played today
@@ -798,6 +810,41 @@ function getQuizCardForTag(state, env) {
 // Handlers
 // =====================
 
+// Advance past a virtual act whose lines_after is exhausted:
+// decision → next virtual act → episode complete. Shared by onTapNextLine,
+// onVocabReviewDone and onRateCard so an act with NO lines_after (the norm
+// for non-final virtual acts of segmented acts) never lands the player on
+// an empty "No line to display" screen.
+function advancePastLinesAfter(state, env) {
+  const act = getCurrentAct(state);
+  if (act && act.decision && act.decision.choices && act.decision.choices.length > 0) {
+    return { actPhase: 'choice', currentLineIndex: 0, showingAnswer: false };
+  }
+  const nextVirtualIndex = (state.currentActIndex || 0) + 1;
+  const currentEpisode = getCurrentEpisode(state);
+  if (currentEpisode && nextVirtualIndex < getTotalVirtualActs(currentEpisode)) {
+    return {
+      currentActIndex: nextVirtualIndex,
+      currentLineIndex: 0,
+      actPhase: 'lines_before',
+      showingAnswer: false,
+    };
+  }
+  // Last act with no decision — episode complete
+  const episodesPlayedToday = [...(state.episodesPlayedToday || [])];
+  if (state.currentEpisodeId && !episodesPlayedToday.includes(state.currentEpisodeId)) {
+    episodesPlayedToday.push(state.currentEpisodeId);
+  }
+  return {
+    currentView: 'welcome',
+    currentActIndex: nextVirtualIndex,
+    currentLineIndex: 0,
+    actPhase: 'lines_before',
+    showingAnswer: false,
+    episodesPlayedToday,
+  };
+}
+
 const Handlers = {
   onTapNext: (state, env) => {
     const nextIndex = (state.pageIndex || 0) + 1;
@@ -916,10 +963,14 @@ const Handlers = {
         }
         if (!hasDueCardsForTag) {
           // Skip vocab review — no due cards for this tag while overpressure
+          const toast = `Skipping quiz — ${counters.due} due cards to review first`;
+          if ((act.lines_after || []).length === 0) {
+            return { ...advancePastLinesAfter(state, env), toast };
+          }
           return {
             actPhase: 'lines_after',
             currentLineIndex: 0,
-            toast: `Skipping quiz — ${counters.due} due cards to review first`,
+            toast,
           };
         }
       }
@@ -940,34 +991,9 @@ const Handlers = {
         return { currentLineIndex: index };
       }
       // Lines after done → choice (if this act has one) or next act
-      if (act.decision && act.decision.choices && act.decision.choices.length > 0) {
-        return { actPhase: 'choice', currentLineIndex: 0 };
-      }
-      // Virtual act with no decision (middle act from segmented normalization):
-      // advance to next act without incrementing play count.
-      const nextVirtualIndex = (state.currentActIndex || 0) + 1;
-      const currentEpisode = getCurrentEpisode(state);
-      if (currentEpisode && nextVirtualIndex < getTotalVirtualActs(currentEpisode)) {
-        return {
-          currentActIndex: nextVirtualIndex,
-          currentLineIndex: 0,
-          actPhase: 'lines_before',
-          showingAnswer: false,
-        };
-      }
-      // Last act with no decision — episode complete
-      if (!state.episodesPlayedToday?.includes(state.currentEpisodeId)) {
-        state.episodesPlayedToday?.push(state.currentEpisodeId);
-      }
-      return {
-        currentView: 'welcome',
-        currentActIndex: nextVirtualIndex,
-        currentLineIndex: 0,
-        actPhase: 'lines_before',
-        showingAnswer: false,
-      };
+      return advancePastLinesAfter(state, env);
     }
-    
+
     return {};
   },
 
@@ -1007,13 +1033,18 @@ const Handlers = {
     const scores = { ...(state.attributeScores || {}) };
     scores[outcome.attribute] = (scores[outcome.attribute] || 0) + outcome.delta;
     
-    // Extract dialogue from outcome line (CMS stores lines as objects with .dialogue)
-    const outcomeText = typeof outcome.line === 'string'
-      ? outcome.line
-      : (outcome.line?.dialogue || JSON.stringify(outcome.line));
+    // Keep the outcome line as a LINE OBJECT, not a bare string: the View
+    // renders it through LineCard, which reads line.dialogue (bug fix:
+    // flattening to a string rendered a blank outcome card). CMS
+    // corruption (dialogue '[None]' with real text in 'line') is repaired
+    // by normalizeLine, same as narrative lines. Legacy string lines are
+    // wrapped into { dialogue }.
+    const outcomeLine = typeof outcome.line === 'string'
+      ? { dialogue: outcome.line }
+      : normalizeLine(outcome.line);
     return {
       actPhase: 'outcome',
-      outcomeLine: outcomeText,
+      outcomeLine,
       outcomePassed: passed,
       outcomeDelta: outcome.delta,
       outcomeAttribute: outcome.attribute,
@@ -1070,7 +1101,12 @@ const Handlers = {
   },
 
   onVocabReviewDone: (state, env) => {
-    // Vocab review complete → go to lines_after
+    // Vocab review complete → go to lines_after, or straight on if this
+    // act has no lines_after (non-final virtual acts of segmented acts)
+    const act = getCurrentAct(state);
+    if (act && (act.lines_after || []).length === 0) {
+      return { showingAnswer: false, vocabReviewCardId: null, ...advancePastLinesAfter(state, env) };
+    }
     return { actPhase: 'lines_after', currentLineIndex: 0, showingAnswer: false, vocabReviewCardId: null };
   },
 
@@ -1166,10 +1202,11 @@ const Handlers = {
     const currentNewCardsToday = (newCardsDay === today) ? (state.newCardsRatedToday || 0) : 0;
     const newCardsRatedToday = currentNewCardsToday + (isNewCard ? 1 : 0);
 
-    // If in vocab_review, rating any card moves us to lines_after (continue narrative)
+    // If in vocab_review, rating any card moves us to lines_after (continue
+    // narrative) — or straight on when the act has no lines_after.
     const isVocabReview = state.currentView === 'episode' && state.actPhase === 'vocab_review';
     if (isVocabReview) {
-      return {
+      const base = {
         cardStats: newStats,
         showingAnswer: false,
         currentCardIndex,
@@ -1177,10 +1214,13 @@ const Handlers = {
         againDelayCounter,
         newCardsRatedToday,
         newCardsRatedTodayDay: today,
-        actPhase: 'lines_after',
-        currentLineIndex: 0,
         vocabReviewCardId: null, // clear locked card
       };
+      const act = getCurrentAct(state);
+      if (act && (act.lines_after || []).length === 0) {
+        return { ...base, ...advancePastLinesAfter(state, env) };
+      }
+      return { ...base, actPhase: 'lines_after', currentLineIndex: 0 };
     }
 
     return { cardStats: newStats, showingAnswer: false, currentCardIndex, againQueue: newAgainQueue, againDelayCounter, newCardsRatedToday, newCardsRatedTodayDay: today };

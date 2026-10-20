@@ -426,6 +426,7 @@ interface SettingsDrawerProps {
   dateshift: number;
   cmsBaseUrl: string;
   onClose: () => void;
+  onSwipeDown: () => void;
   onCheckForUpdates: () => void;
   onCheckForNewContent: () => void;
   onExportState: () => void;
@@ -438,9 +439,12 @@ interface SettingsDrawerProps {
   nextEpisodeInfo: any;
 }
 
-const SettingsDrawer = ({ isOpen, dateshift, cmsBaseUrl, onClose, onCheckForUpdates, onCheckForNewContent, onExportState, onImportState, onIncrementDateshift, onDecrementDateshift, onTapResetState, onChangeCmsBase, mostOverdueCardInfo, nextEpisodeInfo }: SettingsDrawerProps) => {
+const SettingsDrawer = ({ isOpen, dateshift, cmsBaseUrl, onClose, onSwipeDown, onCheckForUpdates, onCheckForNewContent, onExportState, onImportState, onIncrementDateshift, onDecrementDateshift, onTapResetState, onChangeCmsBase, mostOverdueCardInfo, nextEpisodeInfo }: SettingsDrawerProps) => {
   const [diagnosticsOpen, setDiagnosticsOpen] = React.useState(false);
+  const [dragOffset, setDragOffset] = React.useState(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const dragStart = useRef<{ y: number; scrollTop: number } | null>(null);
 
   const handleBackdropClick = (e: React.MouseEvent) => { if (e.target === e.currentTarget) onClose(); };
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -449,11 +453,56 @@ const SettingsDrawer = ({ isOpen, dateshift, cmsBaseUrl, onClose, onCheckForUpda
     e.target.value = '';
   };
 
+  // While the drawer is open, native browser pull-to-refresh must be
+  // disabled (pulling the drawer down closes it — see touch handlers
+  // below). Page refresh remains available when the drawer is closed.
+  // `overflow: hidden` also stops the page behind the backdrop from scrolling.
+  useEffect(() => {
+    if (!isOpen) return;
+    const prevOverscroll = document.body.style.overscrollBehaviorY;
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overscrollBehaviorY = 'none';
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overscrollBehaviorY = prevOverscroll;
+      document.body.style.overflow = prevOverflow;
+    };
+  }, [isOpen]);
+
+  // Swipe-down-to-close, only when the drawer is scrolled to its top.
+  // overscroll-contain on the panel stops scroll chaining, so pulling down
+  // here never reaches the page's native pull-to-refresh.
+  const handleTouchStart = (e: React.TouchEvent) => {
+    const touch = e.touches[0];
+    dragStart.current = { y: touch.clientY, scrollTop: panelRef.current?.scrollTop ?? 0 };
+  };
+  const handleTouchMove = (e: React.TouchEvent) => {
+    if (!dragStart.current) return;
+    const dy = e.touches[0].clientY - dragStart.current.y;
+    if (dragStart.current.scrollTop <= 0 && dy > 0) {
+      setDragOffset(Math.min(dy, 200));
+    }
+  };
+  const handleTouchEnd = () => {
+    if (dragStart.current && dragStart.current.scrollTop <= 0 && dragOffset > 80) {
+      onSwipeDown();
+    }
+    dragStart.current = null;
+    setDragOffset(0);
+  };
+
   if (!isOpen) return null;
 
   return (
     <div className="fixed inset-0 z-50 bg-black/50" onClick={handleBackdropClick}>
-      <div className="absolute bottom-0 left-0 right-0 bg-white dark:bg-slate-800 rounded-t-2xl shadow-2xl max-h-[85vh] overflow-y-auto">
+      <div
+        ref={panelRef}
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
+        className="absolute bottom-0 left-0 right-0 bg-white dark:bg-slate-800 rounded-t-2xl shadow-2xl max-h-[85vh] overflow-y-auto overscroll-contain"
+        style={dragOffset > 0 ? { transform: `translateY(${dragOffset}px)`, transition: 'none' } : { transform: undefined, transition: 'transform 150ms ease-out' }}
+      >
         <div className="flex justify-center pt-3 pb-2"><div className="w-12 h-1.5 bg-slate-300 dark:bg-slate-600 rounded-full" /></div>
         <div className="flex items-center justify-between px-4 pb-4 border-b border-slate-200 dark:border-slate-700">
           <h2 className="text-lg font-semibold text-slate-900 dark:text-white">Settings</h2>
@@ -837,7 +886,8 @@ const ViewInner: React.FC<ViewProps> = (props) => {
       )}
 
       <SettingsDrawer isOpen={isSettingsOpen} dateshift={dateshift} cmsBaseUrl={cmsBaseUrl}
-        onClose={getHandler('onCloseSettings')} onCheckForUpdates={getHandler('onCheckForUpdates')}
+        onClose={getHandler('onCloseSettings')} onSwipeDown={getHandler('onSwipeDownSettings')}
+        onCheckForUpdates={getHandler('onCheckForUpdates')}
         onCheckForNewContent={getHandler('onCheckForNewContent')} onExportState={getHandler('onExportState')}
         onImportState={getHandler('onImportState')} onIncrementDateshift={getHandler('onIncrementDateshift')}
         onDecrementDateshift={getHandler('onDecrementDateshift')} onTapResetState={getHandler('onTapResetState')}

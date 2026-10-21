@@ -46,6 +46,19 @@ function getDueDate(stats) {
   return (stats.lastReviewed || 0) + (stats.interval || 0);
 }
 
+// episodesPlayedToday is only meaningful for the day it was recorded.
+// Read-side day check (same pattern as newCardsRatedToday): on a new day —
+// or for legacy/exported states with no day stamp — the list is stale and
+// must NOT keep excluding episodes. Writers stamp episodesPlayedTodayDay
+// whenever they append, so the list self-heals on the first write of a day.
+function getEpisodesPlayedToday(state, env) {
+  const today = getEffectiveDay(env, state.dateshift || 0);
+  if (state.episodesPlayedTodayDay === undefined || state.episodesPlayedTodayDay !== today) {
+    return [];
+  }
+  return state.episodesPlayedToday || [];
+}
+
 function isCardDue(stats, day, isInAgainQueue) {
   if (isInAgainQueue) return true;
   if (!stats) return true;
@@ -342,7 +355,7 @@ function getNextEpisode(state, env) {
   const cards = state.cards || [];
   const stats = state.cardStats || {};
   const againQueue = state.againQueue || [];
-  const episodesPlayedToday = state.episodesPlayedToday || [];
+  const episodesPlayedToday = getEpisodesPlayedToday(state, env);
 
   // EPISODE SELECTION ALGORITHM v2:
   // 1. Find the most overdue card
@@ -467,7 +480,7 @@ function getMostOverdueCardInfo(state) {
 // matches exactly what fast forward would select.
 function getNextEpisodeInfo(state, env) {
   // Simulate the state changes onTapNextScenario makes before selecting
-  const simulatedPlayedToday = [...(state.episodesPlayedToday || [])];
+  const simulatedPlayedToday = [...getEpisodesPlayedToday(state, env)];
   if (state.currentEpisodeId && !simulatedPlayedToday.includes(state.currentEpisodeId)) {
     simulatedPlayedToday.push(state.currentEpisodeId);
   }
@@ -831,7 +844,7 @@ function advancePastLinesAfter(state, env) {
     };
   }
   // Last act with no decision — episode complete
-  const episodesPlayedToday = [...(state.episodesPlayedToday || [])];
+  const episodesPlayedToday = [...getEpisodesPlayedToday(state, env)];
   if (state.currentEpisodeId && !episodesPlayedToday.includes(state.currentEpisodeId)) {
     episodesPlayedToday.push(state.currentEpisodeId);
   }
@@ -842,6 +855,7 @@ function advancePastLinesAfter(state, env) {
     actPhase: 'lines_before',
     showingAnswer: false,
     episodesPlayedToday,
+    episodesPlayedTodayDay: getEffectiveDay(env, state.dateshift || 0),
   };
 }
 
@@ -900,7 +914,7 @@ const Handlers = {
   onTapNextScenario: (state, env) => {
     // Record play count for current episode before skipping
     const episodePlays = { ...(state.episodePlays || {}) };
-    const episodesPlayedToday = [...(state.episodesPlayedToday || [])];
+    const episodesPlayedToday = [...getEpisodesPlayedToday(state, env)];
     if (state.currentEpisodeId) {
       episodePlays[state.currentEpisodeId] = (episodePlays[state.currentEpisodeId] || 0) + 1;
       // Mark current episode as played today so we don't immediately re-select it
@@ -912,7 +926,7 @@ const Handlers = {
     const stateWithPlays = { ...state, episodePlays, episodesPlayedToday };
     const nextEpisode = getNextEpisode(stateWithPlays, env);
     if (!nextEpisode) {
-      return { currentView: 'welcome', episodePlays, episodesPlayedToday, debugMessage: 'No episodes found' };
+      return { currentView: 'welcome', episodePlays, episodesPlayedToday, episodesPlayedTodayDay: getEffectiveDay(env, state.dateshift || 0), debugMessage: 'No episodes found' };
     }
     return {
       currentView: 'episode',
@@ -923,6 +937,7 @@ const Handlers = {
       showingAnswer: false,
       episodePlays,
       episodesPlayedToday,
+      episodesPlayedTodayDay: getEffectiveDay(env, state.dateshift || 0),
       vocabReviewCardId: null,
     };
   },
@@ -1060,7 +1075,7 @@ const Handlers = {
 
     // Update episode play count
     const episodePlays = { ...(state.episodePlays || {}) };
-    const episodesPlayedToday = [...(state.episodesPlayedToday || [])];
+    const episodesPlayedToday = [...getEpisodesPlayedToday(state, env)];
     episodePlays[state.currentEpisodeId] = (episodePlays[state.currentEpisodeId] || 0) + 1;
 
  // Mark as played today when episode completes (last act)
@@ -1088,6 +1103,7 @@ const Handlers = {
       currentView: 'welcome',
       episodePlays,
       episodesPlayedToday,
+      episodesPlayedTodayDay: getEffectiveDay(env, state.dateshift || 0),
       actPhase: 'lines_before',
       currentLineIndex: 0,
       showingAnswer: false,
@@ -1230,6 +1246,7 @@ const Handlers = {
     dateshift: (state.dateshift || 0) + 1,
     // New day — clear episodes played today so they can be re-selected
     episodesPlayedToday: [],
+    episodesPlayedTodayDay: getEffectiveDay(env, (state.dateshift || 0) + 1),
     // New day — reset new card counter
     newCardsRatedToday: 0,
     newCardsRatedTodayDay: getEffectiveDay(env, (state.dateshift || 0) + 1),

@@ -1079,6 +1079,71 @@ class GivenAgainCardAndDueEpisodeSelected_WhenReachingVocabReview_ThenQuizNotSki
   }
 }
 
+// --- episodesPlayedToday must expire daily ---
+// The list was never reset on day rollover (unlike newCardsRatedToday,
+// it had no day stamp), so after a few days of play it permanently
+// excluded ever-more episodes and selection collapsed into the
+// due-blind least-played fallback. ep_best carries the overdue card's
+// tag (candidate path); ep_other only wins via the fallback tiebreak.
+
+class GivenStaleEpisodesPlayedToday_WhenSelectingEpisode_ThenNotExcluded extends TestCase {
+  run() {
+    const mk = (id, firstTag) => ({
+      id, title: id,
+      acts: [{ id: `${id}_a1`, tag: firstTag, lines_before: [], lines_after: [],
+               decision: { line: { dialogue: 'D?' }, choices: [] } }],
+    });
+    const episodes = [mk('ep_best', 'tag_172'), mk('ep_other', 'tag_zzz')];
+    const base = stateWithContent({
+      episodes,
+      tags: { tag_172: ['402-1.'], tag_zzz: ['402-2.'] },
+      cardStats: {
+        'card-402-1.-eng-thai': { repetitions: 0, interval: 1, ef: 2.5, lastReviewed: 19724, failedToday: true },
+      },
+      againQueue: ['card-402-1.-eng-thai'],
+      episodePlays: { ep_best: 3, ep_other: 0 },
+    });
+    const today = testEnv.time.getDaysSinceEpoch();
+    // Day-stamped YESTERDAY: stale, must not exclude
+    let next = getNextEpisode({ ...base, episodesPlayedToday: ['ep_best'], episodesPlayedTodayDay: today - 1 }, testEnv);
+    assert(next && next.id === 'ep_best',
+      `Yesterday's played-today list must not exclude ep_best, got: ${next?.id}`);
+    // Legacy exported state, NO day stamp at all: also stale, must not exclude
+    next = getNextEpisode({ ...base, episodesPlayedToday: ['ep_best'] }, testEnv);
+    assert(next && next.id === 'ep_best',
+      `Legacy no-stamp played-today list must not exclude ep_best, got: ${next?.id}`);
+    // Control: stamped TODAY — exclusion applies, fallback picks least-played ep_other
+    next = getNextEpisode({ ...base, episodesPlayedToday: ['ep_best'], episodesPlayedTodayDay: today }, testEnv);
+    assert(next && next.id === 'ep_other',
+      `Today's played-today list must exclude ep_best, got: ${next?.id}`);
+  }
+}
+
+class GivenLegacyState_WhenSkippingScenario_ThenPlayedTodaySelfHeals extends TestCase {
+  run() {
+    const mk = (id, tag) => ({
+      id, title: id,
+      acts: [{ id: `${id}_a1`, tag, lines_before: [], lines_after: [],
+               decision: { line: { dialogue: 'D?' }, choices: [] } }],
+    });
+    const state = {
+      ...stateWithContent({
+        episodes: [mk('ep_a', 'tag_a'), mk('ep_b', 'tag_b')],
+        tags: { tag_a: ['402-1.'], tag_b: ['402-2.'] },
+        episodePlays: {},
+        episodesPlayedToday: ['ep_stale_1', 'ep_stale_2'], // legacy list, no day stamp
+      }),
+      currentView: 'episode',
+      currentEpisodeId: 'ep_a',
+    };
+    const updates = Handlers.onTapNextScenario(state, testEnv);
+    assertEqual(updates.episodesPlayedTodayDay, testEnv.time.getDaysSinceEpoch(),
+      'Writer must stamp episodesPlayedTodayDay with today');
+    assert(JSON.stringify(updates.episodesPlayedToday) === JSON.stringify(['ep_a']),
+      `Stale entries must be dropped on write, got: ${JSON.stringify(updates.episodesPlayedToday)}`);
+  }
+}
+
 // ============ TEST RUNNER ============
 
 const allTests = [
@@ -1156,6 +1221,8 @@ const allTests = [
   GivenLegacyStringOutcomeLine_WhenRendering_ThenTextStillVisible,
   GivenSegmentedFirstActWithDueVocab_WhenSelectingEpisode_ThenDueEpisodeChosen,
   GivenAgainCardAndDueEpisodeSelected_WhenReachingVocabReview_ThenQuizNotSkipped,
+  GivenStaleEpisodesPlayedToday_WhenSelectingEpisode_ThenNotExcluded,
+  GivenLegacyState_WhenSkippingScenario_ThenPlayedTodaySelfHeals,
 ];
 
 function runTests() {

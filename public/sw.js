@@ -2,7 +2,7 @@
 // BUILD_VERSION: 2026-10-22-01 — daily-expiring episodesPlayedToday (episodesPlayedTodayDay stamp);
 // version-tolerant image cache serving (ignoreSearch fallback);
 // exact-version CACHE_URLS refresh; no churn on unchanged content (fingerprint-gated version bumps in Store)
-const CACHE_NAME = 'thai-rpg-2026-10-22-01';
+const CACHE_NAME = 'thai-rpg-2026-10-22-02';
 const CONTENT_CACHE_NAME = 'thai-rpg-content-v1';
 
 // Assets to cache on install. Each is cached INDIVIDUALLY so one failure

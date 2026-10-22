@@ -1146,6 +1146,149 @@ class GivenLegacyState_WhenSkippingScenario_ThenPlayedTodaySelfHeals extends Tes
 
 // ============ TEST RUNNER ============
 
+// --- Overpressure serving: the valve chooses WHICH card, never WHETHER to quiz ---
+// Previously the valve SKIPPED every quiz whose act tags had no due cards,
+// collapsing quiz frequency to the due-backlog size (user report 2026-10-22:
+// 4 episodes, 32 opportunities, ~10 quizzes). Now, under overpressure, an
+// act without due-tag cards still gets a vocab review — with the globally
+// most-due card instead of a tag-scoped one.
+
+class GivenOverpressureAndActWithoutDueTags_WhenReachingVocabReview_ThenGlobalDueCardServed extends TestCase {
+  run() {
+    const ep = {
+      id: 'ep_global',
+      title: 'Global Due Episode',
+      acts: [{
+        id: 'act_1', tag: 'tag_zzz', lines_before: [], lines_after: [],
+        decision: { line: { dialogue: 'D?' }, choices: [] },
+      }],
+    };
+    const state = stateWithContent({
+      episodes: [ep],
+      tags: { tag_zzz: ['402-2.'] },
+      tagMeta: { tag_zzz: { name: 'unrelated' } },
+      characters: {}, places: {},
+      cardStats: {
+        'card-402-1.-eng-thai': { repetitions: 0, interval: 1, ef: 2.5, lastReviewed: 19724, failedToday: true },
+      },
+      againQueue: ['card-402-1.-eng-thai'],
+      newCardsRatedToday: 10,
+      newCardsRatedTodayDay: 19724,
+      currentEpisodeId: 'ep_global',
+      currentView: 'episode',
+      currentActIndex: 0,
+      currentLineIndex: 0,
+      actPhase: 'lines_before',
+      episodesPlayedToday: [],
+    });
+    // due = 1 (again card), new = max(0, 10 - 10) = 0 → overpressure ON
+    const next = Handlers.onTapNextLine(state, testEnv);
+    assertEqual(next.actPhase, 'vocab_review',
+      'Under overpressure the quiz must NOT be skipped; a global due card must be served');
+    assertEqual(next.vocabReviewCardId, 'card-402-1.-eng-thai',
+      `The globally most-due (again) card must be quizzed, got: ${next.vocabReviewCardId}`);
+  }
+}
+
+class GivenOverpressureGlobalDueCards_WhenPlayingEpisode_ThenEveryActQuizzesAndRotates extends TestCase {
+  run() {
+    const mkAct = (i) => ({
+      id: `act_${i}`, tag: 'tag_zzz', lines_before: [], lines_after: [],
+      decision: { line: { dialogue: 'D?' }, choices: [] },
+    });
+    const ep = { id: 'ep_rot', title: 'Rotation Episode', acts: [mkAct(1), mkAct(2), mkAct(3)] };
+    let state = stateWithContent({
+      episodes: [ep],
+      tags: { tag_zzz: ['402-2.'] },
+      tagMeta: { tag_zzz: { name: 'unrelated' } },
+      characters: {}, places: {},
+      cardStats: {
+        'card-402-1.-eng-thai': { repetitions: 0, interval: 1, ef: 2.5, lastReviewed: 19724, failedToday: true },
+        'card-402-3.-eng-thai': { repetitions: 0, interval: 1, ef: 2.5, lastReviewed: 19724, failedToday: true },
+      },
+      againQueue: ['card-402-1.-eng-thai', 'card-402-3.-eng-thai'],
+      newCardsRatedToday: 10,
+      newCardsRatedTodayDay: 19724,
+      currentEpisodeId: 'ep_rot',
+      currentView: 'episode',
+      currentActIndex: 0,
+      currentLineIndex: 0,
+      actPhase: 'lines_before',
+      episodesPlayedToday: [],
+    });
+    const seen = [];
+    let guard = 0;
+    while (state.currentView === 'episode' && guard++ < 50) {
+      if (state.actPhase === 'vocab_review') {
+        seen.push(state.vocabReviewCardId);
+        // Rate "again" so both cards stay in the queue — rotation must
+        // still avoid serving the same card twice in a row.
+        state = { ...state, ...Handlers.onRateCard(state, testEnv, state.vocabReviewCardId, 1) };
+        continue;
+      }
+      state = { ...state, ...Handlers.onTapNextLine(state, testEnv) };
+    }
+    assertEqual(seen.length, 3, `Every act must keep its quiz under overpressure, got ${seen.length}`);
+    for (const cardId of seen) {
+      assert(['card-402-1.-eng-thai', 'card-402-3.-eng-thai'].includes(cardId),
+        `Quizzed card must be a due card, got: ${cardId}`);
+    }
+    for (let i = 1; i < seen.length; i++) {
+      assert(seen[i] !== seen[i - 1],
+        `Consecutive quizzes must not repeat a card while other due cards wait: ${seen.join(', ')}`);
+    }
+  }
+}
+
+// A card rated "again" must not immediately become the globally most
+// overdue card again — at least ~2 other quizzes should come in between
+// whenever alternatives exist (user requirement, 2026-10-22).
+class GivenThreeGlobalDueCards_WhenRatedAgainRepeatedly_ThenTwoCardsBetweenRepeats extends TestCase {
+  run() {
+    const mkAct = (i) => ({
+      id: `act_${i}`, tag: 'tag_zzz', lines_before: [], lines_after: [],
+      decision: { line: { dialogue: 'D?' }, choices: [] },
+    });
+    const ep = { id: 'ep_cool', title: 'Cooldown Episode', acts: [mkAct(1), mkAct(2), mkAct(3), mkAct(4), mkAct(5)] };
+    const mkStats = () => ({ repetitions: 0, interval: 1, ef: 2.5, lastReviewed: 19724, failedToday: true });
+    let state = stateWithContent({
+      episodes: [ep],
+      tags: { tag_zzz: ['402-2.'] },  // act tag's vocab (402-2) is NOT due → global path
+      tagMeta: { tag_zzz: { name: 'unrelated' } },
+      characters: {}, places: {},
+      cardStats: {
+        'card-402-1.-eng-thai': mkStats(),
+        'card-402-1.-thai-eng': mkStats(),
+        'card-402-3.-eng-thai': mkStats(),
+      },
+      againQueue: ['card-402-1.-eng-thai', 'card-402-1.-thai-eng', 'card-402-3.-eng-thai'],
+      newCardsRatedToday: 10,
+      newCardsRatedTodayDay: 19724,
+      currentEpisodeId: 'ep_cool',
+      currentView: 'episode',
+      currentActIndex: 0,
+      currentLineIndex: 0,
+      actPhase: 'lines_before',
+      episodesPlayedToday: [],
+    });
+    const seen = [];
+    let guard = 0;
+    while (state.currentView === 'episode' && guard++ < 50) {
+      if (state.actPhase === 'vocab_review') {
+        seen.push(state.vocabReviewCardId);
+        state = { ...state, ...Handlers.onRateCard(state, testEnv, state.vocabReviewCardId, 1) };
+        continue;
+      }
+      state = { ...state, ...Handlers.onTapNextLine(state, testEnv) };
+    }
+    assertEqual(seen.length, 5, `Every act must keep its quiz under overpressure, got ${seen.length}`);
+    for (let i = 2; i < seen.length; i++) {
+      assert(seen[i] !== seen[i - 1] && seen[i] !== seen[i - 2],
+        `A card rated "again" must wait ~2 quizzes before returning: ${seen.join(', ')}`);
+    }
+  }
+}
+
 const allTests = [
   // Segmented episodes
   GivenSegmentedAct_WhenViewingFirstVirtualAct_ThenLinesBeforeTagShown,
@@ -1223,6 +1366,10 @@ const allTests = [
   GivenAgainCardAndDueEpisodeSelected_WhenReachingVocabReview_ThenQuizNotSkipped,
   GivenStaleEpisodesPlayedToday_WhenSelectingEpisode_ThenNotExcluded,
   GivenLegacyState_WhenSkippingScenario_ThenPlayedTodaySelfHeals,
+  // Overpressure serving: valve picks WHICH card, never WHETHER to quiz
+  GivenOverpressureAndActWithoutDueTags_WhenReachingVocabReview_ThenGlobalDueCardServed,
+  GivenOverpressureGlobalDueCards_WhenPlayingEpisode_ThenEveryActQuizzesAndRotates,
+  GivenThreeGlobalDueCards_WhenRatedAgainRepeatedly_ThenTwoCardsBetweenRepeats,
 ];
 
 function runTests() {

@@ -819,6 +819,42 @@ function getQuizCardForTag(state, env) {
   return null;
 }
 
+// OVERPRESSURE SERVING: pick the globally most-due card, ignoring act
+// tags, so quiz frequency never collapses to the due-backlog size. Again
+// cards first (in queue order), then other overdue reviewed cards by due
+// date. Cards served at the last two quizzes are excluded while
+// alternatives exist — a card rated "again" must wait ~2 quizzes before
+// it can come back (user requirement, 2026-10-22).
+const GLOBAL_QUIZ_COOLDOWN = 2;
+function getGlobalDueCard(state, env) {
+  const cards = state.cards || [];
+  const stats = state.cardStats || {};
+  const againQueue = state.againQueue || [];
+  const today = getEffectiveDay(env, state.dateshift || 0);
+  const recentIds = state.lastQuizCardIds || [];
+
+  const dueCards = [];
+  for (const card of cards) {
+    const s = getCardStats(card, stats);
+    if (againQueue.includes(card.id)) { dueCards.push(card); continue; }
+    if (s && s.lastReviewed !== null && (s.lastReviewed + (s.interval || 0)) <= today) {
+      dueCards.push(card);
+    }
+  }
+  if (dueCards.length === 0) return null;
+  // Again cards first (queue order), then overdue by due date
+  dueCards.sort((a, b) => {
+    const ai = againQueue.indexOf(a.id);
+    const bi = againQueue.indexOf(b.id);
+    if ((ai === -1) !== (bi === -1)) return ai === -1 ? 1 : -1;
+    if (ai !== -1) return ai - bi;
+    return getCardDueDate(a, stats, againQueue) - getCardDueDate(b, stats, againQueue);
+  });
+
+  const fresh = dueCards.filter(c => !recentIds.includes(c.id));
+  return (fresh.length > 0 ? fresh : dueCards)[0] || null;
+}
+
 // =====================
 // Handlers
 // =====================
@@ -952,9 +988,13 @@ const Handlers = {
       if (index < act.lines_before.length) {
         return { currentLineIndex: index };
       }
-      // Lines before done → vocab review (or skip if overpressure)
+      // Lines before done → vocab review.
       // OVERPRESSURE VALVE: When Due > New, only review due cards.
-      // If this act's tags have no due cards, skip the quiz with a toast.
+      // If this act's tags have no due cards, the valve now chooses WHICH
+      // card (the globally most-due one) instead of WHETHER to quiz —
+      // every act keeps its vocab review (two per act in the segmented
+      // design) and quiz frequency no longer collapses to the backlog
+      // size. Cards rated "again" wait ~2 quizzes before returning.
       const counters = calculateCounters(state, env);
       const isOverpressure = counters.due > counters.new;
       if (isOverpressure) {
@@ -977,7 +1017,21 @@ const Handlers = {
           }
         }
         if (!hasDueCardsForTag) {
-          // Skip vocab review — no due cards for this tag while overpressure
+          // No due cards for this act's tags — serve the globally most
+          // due card instead of skipping the quiz.
+          const dueCard = getGlobalDueCard(state, env);
+          if (dueCard) {
+            return {
+              actPhase: 'vocab_review',
+              currentLineIndex: 0,
+              showingAnswer: false,
+              vocabReviewCardId: dueCard.id,
+              lastQuizCardIds: [dueCard.id, ...(state.lastQuizCardIds || [])].slice(0, GLOBAL_QUIZ_COOLDOWN),
+              toast: `Due-card review — ${counters.due} due`,
+            };
+          }
+          // Defensive: the valve condition (due > new) guarantees due ≥ 1,
+          // so this should be unreachable — skip only if truly nothing due.
           const toast = `Skipping quiz — ${counters.due} due cards to review first`;
           if ((act.lines_after || []).length === 0) {
             return { ...advancePastLinesAfter(state, env), toast };
@@ -998,6 +1052,7 @@ const Handlers = {
         currentLineIndex: 0,
         showingAnswer: false,
         vocabReviewCardId: quizCard ? quizCard.id : null,
+        lastQuizCardIds: quizCard ? [quizCard.id, ...(state.lastQuizCardIds || [])].slice(0, GLOBAL_QUIZ_COOLDOWN) : (state.lastQuizCardIds || []),
       };
     }
     
@@ -1277,6 +1332,7 @@ const Handlers = {
     cardStats: {},
     againQueue: [],
     againDelayCounter: 0,
+    lastQuizCardIds: [],
     currentCardIndex: 0,
     showingAnswer: false,
     currentView: 'welcome',

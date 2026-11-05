@@ -1208,6 +1208,15 @@ export class Store extends Component<{}, StoreState> {
 
   getHandler = (event: string) => {
     return (...args: any[]) => {
+      // 'Check for New Content' must re-fetch ALL CMS tables (tags, episodes,
+      // vocab, ...). The sync controller handler can only rebuild vocab
+      // cards, so tag->card links stayed stale until the next app restart
+      // (2026-11-03: CMS showed reassigned cards, quiz still served old ones).
+      if (event === 'onCheckForNewContent') {
+        this.loadAllContent().catch((e: any) => {
+          console.error('[Store] Manual content refresh failed:', e?.message || e);
+        });
+      }
       this.setState((prevState) => {
         const handler = (Handlers as Record<string, Function>)[event];
         if (handler) {

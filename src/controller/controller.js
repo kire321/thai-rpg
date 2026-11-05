@@ -915,7 +915,11 @@ const Handlers = {
 
   onCheckForNewContent: (state, env) => {
     if (env.checkForUpdates) env.checkForUpdates();
-    const newItems = env.newContent || (env.loadContent ? env.loadContent() : []);
+    // Content refresh is asynchronous (Store.loadAllContent re-fetches every
+    // CMS table). The sync handler must NOT wipe the deck when the env has no
+    // items to offer (prodEnv.loadContent is a stub returning []).
+    const newItems = env.newContent || (env.loadContent ? env.loadContent() : null);
+    if (!newItems || newItems.length === 0) return {};
     const oldStats = state.cardStats || {};
     const cards = generateCards(newItems);
     const cardStats = mergeStats(oldStats, cards);

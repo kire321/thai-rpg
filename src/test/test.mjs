@@ -1289,6 +1289,42 @@ class GivenThreeGlobalDueCards_WhenRatedAgainRepeatedly_ThenTwoCardsBetweenRepea
   }
 }
 
+
+// 2026-11-03: 'Check for New Content' must not wipe the deck when the env has
+// nothing new to offer. prodEnv.loadContent is a stub returning [] and prodEnv
+// has no newContent, so the old handler set vocabItems: [] and rebuilt zero
+// cards — the deck vanished on every manual refresh. With nothing to offer it
+// must return {} (no state change); Store.getHandler triggers the real async
+// re-fetch (loadAllContent) for this event so tags/cards/episodes actually update.
+
+class GivenNoNewContent_WhenCheckingForNewContent_ThenDeckNotWiped {
+  run() {
+    const state = {
+      vocabItems: testVocabItems,
+      cardStats: { '402-1.': { repetitions: 2 } },
+    };
+    const prodLikeEnv = {
+      checkForUpdates: () => { prodLikeEnv.checked = true; },
+      loadContent: () => [], // prodEnv stub
+      // no newContent — exactly like production
+    };
+    const result = Handlers.onCheckForNewContent(state, prodLikeEnv);
+    assert(prodLikeEnv.checked, 'checkForUpdates should still be called');
+    assert(
+      !result || Object.keys(result).length === 0,
+      `onCheckForNewContent with no items must return {}, got: ${JSON.stringify(result)}`
+    );
+    assertEqual(state.vocabItems.length, 3, 'state.vocabItems must not be wiped');
+    // env that DOES offer items keeps the merge behavior
+    const result2 = Handlers.onCheckForNewContent(state, {
+      checkForUpdates: () => {},
+      loadContent: () => testVocabItems,
+    });
+    assert(Array.isArray(result2.vocabItems) && result2.vocabItems.length === 3,
+      'env offering items must still merge them into the deck');
+  }
+}
+
 const allTests = [
   // Segmented episodes
   GivenSegmentedAct_WhenViewingFirstVirtualAct_ThenLinesBeforeTagShown,
@@ -1370,6 +1406,8 @@ const allTests = [
   GivenOverpressureAndActWithoutDueTags_WhenReachingVocabReview_ThenGlobalDueCardServed,
   GivenOverpressureGlobalDueCards_WhenPlayingEpisode_ThenEveryActQuizzesAndRotates,
   GivenThreeGlobalDueCards_WhenRatedAgainRepeatedly_ThenTwoCardsBetweenRepeats,
+  // 2026-11-03: manual content refresh must not wipe the deck
+  GivenNoNewContent_WhenCheckingForNewContent_ThenDeckNotWiped,
 ];
 
 function runTests() {

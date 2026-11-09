@@ -2,7 +2,7 @@
 // Boilerplate - create once, never touch
 
 import React, { Component } from 'react';
-import { getProps, Handlers } from '../controller/controller.js';
+import { getProps, Handlers, daysSinceEpochLocal } from '../controller/controller.js';
 import { View } from '../view/View';
 import type { Time, Env } from '../types';
 
@@ -20,7 +20,12 @@ const time: Time = {
     return d.getTime();
   },
   getDaysSinceEpoch: () => {
-    return Math.floor(Date.now() / (1000 * 60 * 60 * 24));
+    // LOCAL-calendar day (flips at local midnight, not UTC midnight). With a
+    // UTC-midnight reckoning, users east of Greenwich opening the app in the
+    // morning (local 00:00–07:00 at UTC+7) got "yesterday": due cards were
+    // not counted, the new-card allowance didn't reset, and yesterday's
+    // episodes stayed excluded (2026-11-09 header-count bug).
+    return daysSinceEpochLocal();
   },
 };
 
@@ -1094,7 +1099,14 @@ export class Store extends Component<{}, StoreState> {
   };
 
   private handleVisibilityForImages = () => {
-    if (!document.hidden) this.repairImageCacheIfOnline();
+    if (document.hidden) return;
+    this.repairImageCacheIfOnline();
+    // Re-render on foreground return: the local day may have rolled over
+    // while the page was backgrounded/frozen (mobile PWA resume), and every
+    // date-dependent number (header counters, due dates, played-today
+    // exclusions) is derived at render time. Without this, a resumed page
+    // kept showing yesterday's counts until the first tap.
+    this.forceUpdate();
   };
 
   // Inline stats merge (same logic as controller)

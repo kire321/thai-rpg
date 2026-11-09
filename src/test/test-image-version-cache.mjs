@@ -21,7 +21,7 @@ import path from 'node:path';
 const BASE = process.argv[2] || 'http://127.0.0.1:8088';
 const MIRROR = process.argv[3] || '/tmp/cms-mirror';
 const BLOCKED = ['narrator.png', 'grammar_mill.png'];
-const EXPECTED_IMAGES = 48;
+const EXPECTED_IMAGES = 49; // 2026-11-09: live CMS grew from 48 to 49 pictures — diff against /cms when this fails
 let failures = 0;
 const check = (name, cond, extra = '') => {
   console.log(`${cond ? 'PASS' : 'FAIL'}  ${name}${extra ? ' — ' + extra : ''}`);

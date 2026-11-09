@@ -13,3 +13,4 @@ export interface Props {
 export function getProps(state: State, env: Env): Props;
 export const Handlers: Record<string, (state: State, env: Env, ...args: any[]) => any>;
 export function sm2Schedule(quality: number, repetitions: number, interval: number, ef: number): { interval: number; repetitions: number; ef: number };
+export function daysSinceEpochLocal(nowMs?: number, timezoneOffsetMinutes?: number): number;

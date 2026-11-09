@@ -39,6 +39,20 @@ function getEffectiveDay(env, dateshift) {
   return env.time.getDaysSinceEpoch() + (dateshift || 0);
 }
 
+// LOCAL-calendar day index: flips at LOCAL midnight, not UTC midnight.
+// The production env used Math.floor(Date.now() / 86400000), which flips at
+// 00:00 UTC; east of Greenwich (e.g. Thailand, UTC+7) the local morning
+// 00:00–07:00 still counted as YESTERDAY — opening the app then showed
+// yesterday's header counts (interval-1 cards not due yet, new-card
+// allowance not reset, yesterday's episodes still excluded). Pure and
+// injectable so user-journey tests can pin an instant and a timezone
+// offset (Date.getTimezoneOffset() minutes, +west). For zones with DST the
+// per-call offset keeps the flip anchored to local midnight; Thailand has
+// no DST, so this is exact for the app's audience.
+function daysSinceEpochLocal(nowMs = Date.now(), timezoneOffsetMinutes = new Date().getTimezoneOffset()) {
+  return Math.floor((nowMs - timezoneOffsetMinutes * 60000) / 86400000);
+}
+
 function getDueDate(stats) {
   if (!stats) return null;
   if (stats.failedToday) return stats.lastReviewed;
@@ -1344,4 +1358,4 @@ const Handlers = {
   }),
 };
 
-export { getProps, Handlers, sm2Schedule, generateCards, shuffleArray, mergeStats, getMostOverdueCardInfo, getNextEpisodeInfo, formatDueDate, getCardDueDate, getNextEpisode, getQuizCardForTag, countDueCardsInEpisode, normalizeLine, getActTags, getVirtualAct, getVirtualActCount, getTotalVirtualActs, getActAtIndex };
+export { getProps, Handlers, sm2Schedule, generateCards, shuffleArray, mergeStats, getMostOverdueCardInfo, getNextEpisodeInfo, formatDueDate, getCardDueDate, getNextEpisode, getQuizCardForTag, countDueCardsInEpisode, normalizeLine, getActTags, getVirtualAct, getVirtualActCount, getTotalVirtualActs, getActAtIndex, daysSinceEpochLocal };

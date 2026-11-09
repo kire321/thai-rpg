@@ -1325,7 +1325,102 @@ class GivenNoNewContent_WhenCheckingForNewContent_ThenDeckNotWiped {
   }
 }
 
+// ============ LOCAL-DAY RECKONING (2026-11-09) ============
+// Bug report: "when I open the app after not having used it for a day, the
+// counts in the header are from yesterday." Root cause: the app's "today"
+// flipped at UTC midnight (Math.floor(Date.now() / 86400000)). East of
+// Greenwich (e.g. Thailand, UTC+7) the local morning 00:00–07:00 still
+// belongs to YESTERDAY in UTC terms: interval-1 cards reviewed yesterday
+// evening are not counted due, the 10-new-cards allowance doesn't reset,
+// and yesterday's played episodes stay excluded from selection. Fix:
+// daysSinceEpochLocal() flips at LOCAL midnight; Store's time env delegates
+// to it, so the tests below exercise the SAME code path the app runs.
+
+import { daysSinceEpochLocal } from '../controller/controller.js';
+
+const BANGKOK_OFFSET_MIN = -420; // Date.getTimezoneOffset() at UTC+7
+const DAY_MS = 86400000;
+const DAY_X = 20000; // arbitrary day number standing in for "yesterday"
+// 01:00 Bangkok on day X+1 == 18:00 UTC on day X: the app is opened in the
+// morning BEFORE the UTC day has rolled over — the bug window.
+const MORNING_OPEN_MS = DAY_X * DAY_MS + 18 * 3600000;
+// 17:00 Bangkok on day X == 10:00 UTC on day X: evening use; local day and
+// UTC day agree — the fix must NOT change this.
+const EVENING_USE_MS = DAY_X * DAY_MS + 10 * 3600000;
+
+// State as the app saved it after yesterday-evening use. Stamps are
+// local-reckoned day numbers; for a 17:00 Bangkok session the local and UTC
+// day are both DAY_X, so this state is identical to a real exported state.
+function stateSavedYesterdayEvening() {
+  const state = stateWithContent({
+    episodes: [
+      { id: 'ep_yesterday', title: 'Played Yesterday', acts: [{ id: 'a1', tag: 'tag_402', lines_before: [], lines_after: [], decision: { line: { dialogue: 'D?' }, choices: [] } }] },
+      { id: 'ep_other', title: 'Other', acts: [{ id: 'a1', tag: 'tag_zzz', lines_before: [], lines_after: [], decision: { line: { dialogue: 'D?' }, choices: [] } }] },
+    ],
+    tags: { tag_402: ['402-1.'], tag_zzz: ['402-2.'] },
+    tagMeta: {},
+    episodePlays: {},
+    episodesPlayedToday: ['ep_yesterday'],
+    episodesPlayedTodayDay: DAY_X,
+    newCardsRatedToday: 7,
+    newCardsRatedTodayDay: DAY_X,
+  });
+  const cardStats = {};
+  for (const card of state.cards) {
+    cardStats[card.id] = card.id === 'card-402-1.-thai-eng'
+      ? { repetitions: 2, interval: 1, ef: 2.5, lastReviewed: DAY_X, failedToday: false }
+      : { repetitions: 2, interval: 999, ef: 2.5, lastReviewed: DAY_X, failedToday: false };
+  }
+  return { ...state, cardStats };
+}
+
+class GivenAppOpenedInMorningBeforeUtcMidnight_WhenIReadHeader_ThenCountsAreForLocalToday {
+  run() {
+    // Sanity: the UTC day has NOT rolled over at this instant — under the
+    // old UTC-midnight reckoning the app would compute "today" = DAY_X.
+    assertEqual(Math.floor(MORNING_OPEN_MS / DAY_MS), DAY_X, 'sanity: UTC day is still DAY_X');
+    assertEqual(daysSinceEpochLocal(MORNING_OPEN_MS, BANGKOK_OFFSET_MIN), DAY_X + 1,
+      'Local morning (Bangkok) must already be the new LOCAL day');
+
+    const env = {
+      ...testEnv,
+      time: { ...testEnv.time, getDaysSinceEpoch: () => daysSinceEpochLocal(MORNING_OPEN_MS, BANGKOK_OFFSET_MIN) },
+    };
+    const props = getProps(stateSavedYesterdayEvening(), env);
+    assertEqual(props.dueCount, 1,
+      'Interval-1 card reviewed yesterday evening must be due on the new local day');
+    assertEqual(props.newCount, 10,
+      'New-card allowance must reset for the new LOCAL day');
+    assertEqual(props.doneCount, 5, 'The other five cards sit in the future pile');
+    const next = getNextEpisode(stateSavedYesterdayEvening(), env);
+    assertEqual(next.id, 'ep_yesterday',
+      'Episodes played yesterday must be selectable again once the local day rolled over');
+  }
+}
+
+class GivenAppOpenedSameLocalDay_WhenIReadHeader_ThenCountsAreUnchanged {
+  run() {
+    // Control: 17:00 Bangkok == 10:00 UTC — the same calendar day in both
+    // reckonings, so the fix must not alter evening behavior.
+    assertEqual(daysSinceEpochLocal(EVENING_USE_MS, BANGKOK_OFFSET_MIN), DAY_X,
+      'Evening Bangkok is the same local day');
+    const env = {
+      ...testEnv,
+      time: { ...testEnv.time, getDaysSinceEpoch: () => daysSinceEpochLocal(EVENING_USE_MS, BANGKOK_OFFSET_MIN) },
+    };
+    const props = getProps(stateSavedYesterdayEvening(), env);
+    assertEqual(props.dueCount, 0, 'Interval-1 card is NOT due until tomorrow');
+    assertEqual(props.doneCount, 6, 'All six reviewed cards sit in the future pile');
+    assertEqual(props.newCount, 3, 'Allowance keeps yester-evening progress on the same local day');
+    const next = getNextEpisode(stateSavedYesterdayEvening(), env);
+    assertEqual(next.id, 'ep_other', 'An episode played today stays excluded today');
+  }
+}
+
 const allTests = [
+  // Local-day reckoning (2026-11-09): header counts must follow LOCAL midnight
+  GivenAppOpenedInMorningBeforeUtcMidnight_WhenIReadHeader_ThenCountsAreForLocalToday,
+  GivenAppOpenedSameLocalDay_WhenIReadHeader_ThenCountsAreUnchanged,
   // Segmented episodes
   GivenSegmentedAct_WhenViewingFirstVirtualAct_ThenLinesBeforeTagShown,
   GivenSegmentedAct_WhenAdvancingPastFirstQuiz_ThenSecondVirtualActStarts,
